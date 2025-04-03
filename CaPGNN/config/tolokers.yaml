@@ -1,0 +1,5 @@
+data:
+  name: tolokers
+  num_feats: 10
+  num_classes: 2
+  is_multilabel: false

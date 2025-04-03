@@ -1,0 +1,5 @@
+data:
+  name: amazonCoBuyComputer
+  num_feats: 767
+  num_classes: 10
+  is_multilabel: false

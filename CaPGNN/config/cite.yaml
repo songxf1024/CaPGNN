@@ -1,0 +1,5 @@
+data:
+  name: cite
+  num_feats: 3703
+  num_classes: 6
+  is_multilabel: false

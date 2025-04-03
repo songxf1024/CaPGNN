@@ -1,0 +1,5 @@
+data:
+  name: ogbn-proteins
+  num_feats: 8
+  num_classes: 2
+  is_multilabel: false

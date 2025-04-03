@@ -1,0 +1,5 @@
+data:
+  name: ogbn-products
+  num_feats: 100
+  num_classes: 47
+  is_multilabel: false

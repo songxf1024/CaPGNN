@@ -1,0 +1,5 @@
+data:
+  name: reddit
+  num_feats: 602
+  num_classes: 41
+  is_multilabel: false

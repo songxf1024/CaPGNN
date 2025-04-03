@@ -1,0 +1,5 @@
+data:
+  name: coraFull
+  num_feats: 8710
+  num_classes: 70
+  is_multilabel: false

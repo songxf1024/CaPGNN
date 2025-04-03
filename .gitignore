@@ -1,0 +1,12 @@
+data/
+exp/
+exp_bk/
+graph_degrees/
+.idea
+*.log
+**/__pycache__/
+**/.ipynb_checkpoints/
+**/*.pyc
+swanlog/
+records.csv
+eval/

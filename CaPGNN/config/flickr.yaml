@@ -1,0 +1,5 @@
+data:
+  name: flick
+  num_feats: 500
+  num_classes: 7
+  is_multilabel: false

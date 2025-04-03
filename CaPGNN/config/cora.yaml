@@ -1,0 +1,5 @@
+data:
+  name: cora
+  num_feats: 1433
+  num_classes: 7
+  is_multilabel: false

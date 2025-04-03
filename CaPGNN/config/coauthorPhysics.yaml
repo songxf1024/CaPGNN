@@ -1,0 +1,5 @@
+data:
+  name: coauthorPhysics
+  num_feats: 8415
+  num_classes: 5
+  is_multilabel: false

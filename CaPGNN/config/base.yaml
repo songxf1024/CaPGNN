@@ -1,0 +1,19 @@
+data:
+  dataset_path: /mnt/disk/sxf/data/datasets # data/dataset
+  partition_path: /mnt/disk/sxf/data/part_data
+model:
+  num_layers: 3
+  hidden_dim: 256
+  dropout_rate: 0.5
+  use_norm: true
+  aggregator_type: mean # default setting for graphsage
+runtime:
+  model_name: gcn
+  learning_rate: 0.01
+  weight_decay: 0.01
+  num_epoches: 200
+  mode: Vanilla
+  assign_scheme: uniform
+  exp_path: exp
+  logger_level: INFO
+  log_steps: 10

@@ -1,0 +1,5 @@
+data:
+  name: amazonProducts
+  num_feats: 200
+  num_classes: 107
+  is_multilabel: true

@@ -1,0 +1,5 @@
+data:
+  name: yelp
+  num_feats: 300
+  num_classes: 100
+  is_multilabel: True
