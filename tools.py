@@ -1,5 +1,4 @@
 import time
-
 import requests
 
 outer_ip = None

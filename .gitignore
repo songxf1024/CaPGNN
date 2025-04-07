@@ -10,3 +10,4 @@ graph_degrees/
 swanlog/
 records.csv
 eval/
+utils/logs/
