@@ -102,6 +102,6 @@ Adjust configurations in `CaPGNN/config/*yaml` to customize dataset, model, trai
 
 
 ## License
-Copyright (c) 2025 xianfeng song. All rights reserved.
+Copyright (c) 2025 . All rights reserved.
 
 Licensed under the MIT License.
