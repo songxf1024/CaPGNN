@@ -24,7 +24,7 @@ class Communicator(object):
     def __init__(self, backend: str ='gloo', init_method: str ='env://'):
         self._init(backend, init_method)
         self.comm_buffer: CommBuffer = None
-        # set ctx (不要跨进程共享)
+        # set ctx (Do not share across processes)
         Communicator.ctx = self
 
 
@@ -32,10 +32,10 @@ class Communicator(object):
         '''
         initialize the communicator.
         '''
-        # 确保支持 NCCL 和 Gloo 后端
+        # Ensure support for NCCL and Gloo backends
         if backend not in ['gloo', 'nccl']:
             raise NotImplementedError('Supported backends are gloo and nccl.')
-        # 使用 NCCL 时，必须使用 GPU 设备
+        # When using NCCL, you must use a GPU device
         if backend == 'nccl' and not torch.cuda.is_available():
             raise RuntimeError('NCCL backend requires CUDA.')
 
@@ -183,9 +183,9 @@ class Communicator(object):
                         recv_buffer_cpu: Basic_Buffer_Type,
                         recv_buffer_gpu: Basic_Buffer_Type,
                         send_buffer_cpu: Basic_Buffer_Type,
-                        total_send_idx,                         # 所有远程分区上，send_idx的具体ID索引。如[xx,xx,xx,...,xx]
-                        send_idx: Dict[int, Tuple[int, int]],   # 每个远程分区i上，send_idx的起止位置和具体的ID。如{0: (0, 17660), 2: (17660, 36595)}
-                        recv_idx: Basic_Buffer_Type,            # 本地分区上，属于远程分区i的HALO节点，相对于内点ID的偏移。如{0: (0, 3, 6, 16), 2: (8, 9)}
+                        total_send_idx,                         # The specific ID index of send_idx on all remote partitions. Such as [xx,xx,xx,...,xx]
+                        send_idx: Dict[int, Tuple[int, int]],   # On each remote partition i, the start and end position of send_idx and the specific ID. For example {0: (0, 17660), 2: (17660, 36595)}
+                        recv_idx: Basic_Buffer_Type,            # On the local partition, the HALO node belonging to the remote partition i is offset from the inner point ID. Such as {0: (0, 3, 6, 16), 2: (8, 9)}
                         send_messages: Tensor,
                         g_info, gpb,  timer, storage_server,
                         _comm_stream, _corr_stream,
@@ -195,20 +195,20 @@ class Communicator(object):
         all-to-all full-precision message exchange across all the worker
         '''
         rank, world_size = self.get_rank(), self.get_world_size()
-        # 存储所有发送/接收操作的请求对象
+        # Store all request objects for sending/receiving operations
         req_send, req_recv = [], Queue()
 
-        # 向所有其他节点发送数据并接收数据
+        # Send and receive data to all other nodes
         _comm_stream.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(_comm_stream):
             for i in range(1, world_size):
-                # 当前节点在当前循环中接收数据的节点的 rank
+                # The rank of the node where the current node receives data in the current loop
                 left = (rank - i + world_size) % world_size
-                # 当前节点在当前循环中发送数据的节点的 rank
+                # The rank of the node where the current node sends data in the current loop
                 right = (rank + i) % world_size
-                # 获取需要发送给 right 节点的数据在 send_messages 中的位置范围
+                # Get the location range of data to be sent to the right node in send_messages
                 retrieve_idx = send_idx[right]
-                # 从 left 节点异步接收数据到 recv_buffer_cpu[left] 中
+                # Asynchronously receive data from the left node into recv_buffer_cpu[left]
                 r2_0 = self.async_recv(recv_buffer_cpu[0][left], left, MessageType.DATA)
                 ## r2_1 = self.async_recv(recv_buffer_cpu[1][left], left, MessageType.PARAMs)
                 req_recv.put((r2_0, left))  # (r2_0, r2_1, left)
@@ -216,18 +216,18 @@ class Communicator(object):
                 if use_cache and name.startswith('forward'):
                     all_data = send_messages[retrieve_idx[0]:retrieve_idx[1]]
                     # ----------------------------------------------- #
-                    #   解析出要发送的节点的全局ID，以便从缓存中进行查找
+                    #   Parse out the global ID of the node to be sent for searching from the cache
                     global_send_idx = gpb.partid2nids(rank)[0].item() + total_send_idx[retrieve_idx[0]:retrieve_idx[1]]
-                    # 1. 发送时，缓存里有的就不发；
-                    #   找到缓存中存在的 key
+                    # 1. When sending, no sending in the cache; 
+                    # Find the key that exists in the cache
                     # timer.start(f'check_cache')
                     with timer.record('check_cache'):
                         cache_mask = storage_server.is_feature_in_cache(name, global_send_idx, features=all_data, target_rank=right)
                     # timer.stop(f'check_cache')
                     noncache_mask = ~cache_mask
                     # ----------------------------------------------- #
-                    # 复制非缓存数据
-                    # 获取 non_cache_mask 的数据（这些数据需要发送）
+                    # Copy non-cache data 
+                    # Get non_cache_mask data (this data needs to be sent)
                     non_cache_data = all_data[noncache_mask]
                     send_values = send_buffer_cpu[0][right][:non_cache_data.size(0)]
                     # timer.start(f'copy_non_cache_data')
@@ -237,29 +237,29 @@ class Communicator(object):
                     # send_cache_indices = send_buffer_cpu[1][right]
                     # cache_indices = torch.nonzero(cache_mask).squeeze()
                     # send_cache_indices[0] = min(send_cache_indices.numel()-1, cache_indices.numel())
-                    # # 复制缓存索引, send_buffer_cpu is pinned memory
+                    # # Copy cache index, end_buffer_cpu is pinned memory
                     # send_cache_indices[1:send_cache_indices[0]+1].copy_(cache_indices[:send_cache_indices[0]], non_blocking=True)
-                    # # 发送图结构而不是特征来减小
+                    # # Send graph structure instead of feature to reduce
                 else:
-                    # 异步发送数据。数据复制到 send_buffer_cpu[right] 中
+                    # Send data asynchronously. Copy the data into send_buffer_cpu[right]
                     send_values = send_buffer_cpu[0][right]
                     # send_cache_indices = send_buffer_cpu[1][right]
                     send_values.copy_(send_messages[retrieve_idx[0]:retrieve_idx[1]], non_blocking=True)
 
-                # 使用 async_send 函数异步发送数据到 right 节点
+                # Use the async_send function to send data asynchronously to the right node
                 req_send.append(self.async_send(send_values, right, MessageType.DATA))
                 # req_send.append(self.async_send(send_cache_indices, right, MessageType.PARAMs))
             # if not use_pipeline: timer.start(f'msg_comm')
             while not req_recv.empty():
-                # 从队列中获取一个接收请求对象和对应的发送节点的 rank
+                # Get a rank from the queue for receiving the request object and corresponding sending node
                 r_0, left = req_recv.get(block=False)  # , r_1
-                # 等待接收操作完成
+                # Wait for the reception operation to complete
                 r_0.wait()
                 # r_1.wait()
-                # 将接收到的数据从 recv_buffer_cpu[left] 复制到 recv_buffer_gpu[left]
+                # Copy the received data from recv_buffer_cpu[left] to recv_buffer_gpu[left]
                 recv_buffer_gpu[0][left].copy_(recv_buffer_cpu[0][left], non_blocking=True)
                 # recv_buffer_gpu[1][left].copy_(recv_buffer_cpu[1][left], non_blocking=True)
-            # 等待发送操作完成
+            # Wait for the sending operation to complete
             for r in req_send: r.wait()
             # if not use_pipeline: timer.stop(f'msg_comm')
 
