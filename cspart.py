@@ -1,4 +1,4 @@
-# 算力感知的图分区。根据图的复杂度和GPU的算力来划分子图。
+# Graph partitioning of computing power perception. Digit the molecular graph based on the complexity of the graph and the computing power of the GPU.
 import csv
 import os
 import random
@@ -51,13 +51,13 @@ class GraphInfo(object):
         self.graph = graph
         self.gpb = gpb
         self.node_feats = node_feats
-        self.is_bidirected = is_bidirected    # bool，是否为无向图(判断条件：每个节点的入度==出度)
-        self.send_idx = send_idx              # dict，每个远程分区i上，send_idx的起止位置。如{0: (0, 17660), 2: (17660, 36595)}
-        self.total_send_idx = total_send_idx  # list，cat所有远程分区i上，send_idx的具体ID。是对应分区的局部ID。如[xx,xx,xx,...,xx]
-        self.recv_idx = recv_idx              # dict，本地分区上，属于远程分区i的HALO节点，相对于内点ID的偏移。如{0: (0, 3, 6, 16), 2: (8, 9)}
-        self.agg_scores = agg_scores          # dict，本地分区上，属于远程分区i的HALO节点的分数。如{0: ([x,x]前向, [x,x]后向), 2: ([x,x]前向, [x,x]后向)}
-        self.num_inner = num_inner            # int，当前分区上的内部节点数(不包含HALO节点)
-        self.num_remote = num_remote          # int，当前分区上的远程节点数(即HALO节点)
+        self.is_bidirected = is_bidirected    # bool，Is it an undirected graph (judgment condition: incoming degree of each node == outgoing degree)
+        self.send_idx = send_idx              # dict，On each remote partition i, the start and end position of send_idx. For example {0: (0, 17660), 2: (17660, 36595)}
+        self.total_send_idx = total_send_idx  # list，cat on all remote partitions i, send_idx's specific ID. It is the local ID of the corresponding partition. Such as [xx,xx,xx,...,xx]
+        self.recv_idx = recv_idx              # dict，On the local partition, the HALO node belonging to the remote partition i is offset from the inner point ID. Such as {0: (0, 3, 6, 16), 2: (8, 9)}
+        self.agg_scores = agg_scores          # dict，On the local partition, the score of the HALO node belonging to the remote partition i. For example {0: ([x,x] forward, [x,x] backward), 2: ([x,x] forward, [x,x] backward)}
+        self.num_inner = num_inner            # int，Number of internal nodes on the current partition (not including HALO nodes)
+        self.num_remote = num_remote          # int，The number of remote nodes on the current partition (i.e., HALO nodes)
         self.num_marginal = num_marginal      # int，
         self.num_central = num_central        # int，
         self.device = device
@@ -106,16 +106,16 @@ class CSPart(object):
         for rank in range(self.partition_size):
             partition_dir = f'{self.partition_dir}/{self.dataset_name}/{self.partition_size}part'
             part_config = f'{partition_dir}/{self.dataset_name}.json'
-            # gpb: RangePartitionBook, 用于管理和处理图数据在分布式环境中的分区信息。
-            #   RangePartitionBook 的主要功能是提供节点和边的分区信息。具体而言，它管理了以下内容：
-            #      - 节点和边的分区映射：为每个节点和边分配一个分区编号，表示它们属于哪个分区。
-            #      - 分区范围：定义每个分区中的节点和边的范围，即每个分区包含的节点和边的ID范围。
-            #      - 跨分区通信：在分布式训练中，不同分区的计算节点需要交换节点和边的信息。RangePartitionBook 帮助管理这些跨分区的通信。
-            #   RangePartitionBook 提供了一些方法和属性来查询分区信息，例如：
-            #      - partid2nids(part_id)：返回指定分区ID的节点ID范围。
-            #      - partid2eids(part_id)：返回指定分区ID的边ID范围。
-            #      - nid2partid(nid)：返回指定节点ID所在的分区ID。
-            #      - eid2partid(eid)：返回指定边ID所在的分区ID。
+            # gpb: RangePartitionBook, is used to manage and process partition information of graph data in a distributed environment.
+            #  The main function of RangePartitionBook is to provide partition information for nodes and edges. Specifically, it manages the following:
+            #      - Partition mapping for nodes and edges: Assign a partition number to each node and edge to indicate which partition they belong to.
+            #      - Partition scope: Define the range of nodes and edges in each partition, that is, the ID range of nodes and edges contained in each partition.
+            #      - Cross-partition communication: In distributed training, compute nodes of different partitions need to exchange information of nodes and edges. RangePartitionBook helps manage these cross-partition communications.
+            #   RangePartitionBook provides some methods and properties to query partition information, such as:
+            #      - partid2nids(part_id): Returns the node ID range of the specified partition ID.
+            #      - partid2eids(part_id)：Returns the edge ID range of the specified partition ID.
+            #      - nid2partid(nid)：Returns the partition ID where the specified node ID is located.
+            #      - eid2partid(eid)：Returns the partition ID where the specified edge ID is located.
             g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
             # set graph degrees for GNNs aggregation
             # print(f'{rank}=>{g.formats()} [METIS]')
@@ -123,7 +123,7 @@ class CSPart(object):
             # load global degrees information
             in_degrees_global, out_degrees_global = torch.load(f'{save_dir}/in_degrees.pt'), torch.load(f'{save_dir}/out_degrees.pt')
             # g.ndata['orig_id'] = torch.load(f'{save_dir}/orig_id_{rank}.pt')
-            # 节点在原始大图中的ID
+            # The ID of the node in the original large image
             orig_id = g.ndata['orig_id']
             nodes_feats['in_degrees'] = in_degrees_global[orig_id]
             nodes_feats['out_degrees'] = out_degrees_global[orig_id]
@@ -132,7 +132,7 @@ class CSPart(object):
             node_type = node_type[0]
             # save original degrees for fp and bp
             nodes_feats[dgl.NID] = g.ndata[dgl.NID]
-            # 对于只有一个分区的时候，所有节点都算
+            # When there is only one partition, all nodes are counted
             nodes_feats['part_id'] = g.ndata.get('part_id', torch.zeros_like(orig_id))
             nodes_feats['inner_node'] = g.ndata['inner_node'].bool()
             nodes_feats['label'] = nodes_feats[node_type + '/label']
@@ -161,7 +161,7 @@ class CSPart(object):
 
     def get_send_recv_idx_scores(self, graph_info, skip_load=False, suffix=''):
         '''
-        获取local graph中每个节点的send/recv idx 和 agg 分数。
+        Gets the send/recv idx and agg scores for each node in the local graph.
         '''
         except_list = [('skip' if skip_load else None) for _ in range(self.partition_size)]
         send_idx_list = [None for _ in range(self.partition_size)]
@@ -196,15 +196,15 @@ class CSPart(object):
 
     def _build_store_send_recv_idx_scores(self, graph_info, suffix=''):
         '''
-        构建和存储每个分区的发送和接收索引以及聚合分数，并将这些信息保存到磁盘.
+        Build and store send and receive indexes and aggregate scores for each partition and save this information to disk.
         HALO node.
-        temp_send_idx: 字典，表示每个分区的发送索引。
-        recv_idx: 字典，表示每个分区的接收索引。
-        scores: 字典，表示每个分区的聚合分数。
+        temp_send_idx: dictionary, representing the sending index of each partition. 
+        recv_idx: dictionary, representing the received index of each partition. 
+        scores: dictionary, representing the aggregate scores for each partition.
         '''
-        # 当前分区上的halo节点，在对应远程分区上局部ID
+        # The halo node on the current partition has a local ID on the corresponding remote partition.
         temp_send_buffer_list = [{} for _ in range(self.partition_size)]
-        # 当前分区上，要发往远程分区的节点的ID（这些节点在当前分区上不是halo节点，在远程分区上是halo节点）
+        # On the current partition, the ID of the node to be sent to the remote partition (these nodes are not halo nodes on the current partition, but halo nodes on the remote partition)
         temp_send_idx_list = [{} for _ in range(self.partition_size)]
         recv_idx_list = [{} for _ in range(self.partition_size)]
         scores_list = [{} for _ in range(self.partition_size)]
@@ -215,34 +215,34 @@ class CSPart(object):
             nodes_feats = graph_info[rank].node_feats
             gpb = graph_info[rank].gpb
 
-            # 当前分区rank中内部节点的数量，长度的话，就可以表示外部节点的起始点.
-            # 注意，nodes_feats['inner_node']是包含了HALO节点的标识的(False)
+            # The number and length of internal nodes in the current partition rank can represent the starting point of the external node.
+            # Note that nodes_feats['inner_node'] contains the HALO node's identity (False)
             inner_nodes_num = len(torch.nonzero(nodes_feats['inner_node']))
             temp_send_buffer = {}
             for i in range(self.partition_size):
                 if i != rank:
-                    # 获取当前分区rank中，属于分区i的节点ID (即 分区i => 分区rank 的HALO节点)
+                    # Get the node ID belonging to partition i in the current partition rank (that is, the HALO node of partition i => partition rank)
                     halo_local_belong2i_mask = (nodes_feats['part_id'] == i)
                     # get forward & backward aggreagtion scores for remote neighbors
                     agg_score = self._get_agg_scores(local_graph, halo_local_belong2i_mask, nodes_feats, self.model_type)
-                    # 计算属于分区i的这些HALO节点在当前分区rank中，相对于内点的局部ID或者叫偏移。
-                    # torch.nonzero(belong2i) 是取非零值的索引，由于ID连续，因此就可以看做是节点的局部ID。
-                    # 因为顺序是 inner node 排在前面，outer node 排在后面，所以可以这么取。
+                    # Calculate the local ID or offset of these HALO nodes belonging to partition i in the current partition rank.
+                    # Because the order is that inner node is ranked first and outer node is ranked behind, so it can be taken like this.
+                    # Because the order is that inner node is ranked first and outer node is ranked behind, so it can be taken like this.
                     halo_local_offset_idx = torch.nonzero(halo_local_belong2i_mask).view(-1) - inner_nodes_num
-                    # 计算远程分区i的起始节点的ID (全局 ID) (不包含HALO节点)
+                    # Calculate the ID of the starting node of the remote partition i (global ID) (not including HALO nodes)
                     halo_remote_start_id = gpb.partid2nids(i)[0].item()
                     # halo_remote_start_id2 = graph_info[i].node_feats[dgl.NID][0].item()
-                    # 计算在远程分区i上, 相对于远程分区i而言的节点的ID (即 这些节点在分区i上的局部ID或者叫偏移);
-                    # dgl.NID是个特殊的键，表示要取所有节点的全局ID。
-                    # 这里的全局ID也可以代表节点在全局ID列表中的位置索引，比如[20, 50]，是ID值，也是位置索引。
+                    # Compute the ID of the nodes on the remote partition i (that is, the local ID or offset of these nodes on the partition i); 
+                    # dgl.NID is a special key that indicates that the global ID of all nodes is to be taken.
+                    # he global ID here can also represent the node's position index in the global ID list. For example, [20, 50] is an ID value and also a position index.
                     halo_remote_offset_ids = nodes_feats[dgl.NID][halo_local_belong2i_mask] - halo_remote_start_id
-                    # 这里的score可以反映每个HALO节点的重要性
+                    # The score here can reflect the importance of each HALO node
                     temp_send_buffer[i] = (halo_remote_offset_ids, agg_score)
-                    # 表示这些HALO节点后面需要接收数据
+                    # Indicates that these HALO nodes need to receive data later
                     recv_idx[i] = halo_local_offset_idx
-                    # halo_local_offset_idx表示HALO节点在当前分区的ID(从外点位置开始的)，halo_remote_offset_ids表示HALO节点在所属分区上的ID。
-                    # 这里的HALO节点来自分区i。
-                    # 注意，总体来看，ID都是从0开始的。这也方便了如果从对方分区i的角度来看时，这些ID就已经是局部ID，不需要再次进行处理。
+                    # halo_local_offset_idx represents the ID of the HALO node in the current partition (starting from the outer point position), and halo_remote_offset_ids represents the ID of the HALO node on the partition to which it belongs. 
+                    # The HALO node here comes from partition i. 
+                    # Note that overall, IDs start from 0. This also makes it convenient if you look at the other party's partition i from the perspective of the other party's partition i, these IDs are already local IDs and do not need to be processed again.
             temp_send_buffer_list[rank] = temp_send_buffer
             recv_idx_list[rank] = recv_idx
             # print recv_idx in debug mode
@@ -252,10 +252,10 @@ class CSPart(object):
             scores: Dict[int, Tensor] = {}
             for part_i in range(self.partition_size):
                 if part_i != rank:
-                    # 检查分区i是否有与当前rank分区有关联的节点。(或者说，当前分区是否有节点在远程分区当halo节点)
-                    # 从分区i的角度来看，这些节点是来自分区rank的HALO节点，是分区i需要recv_idx的。
-                    # 因此，对于分区rank而言，相对地是send_idx的。
-                    # 由于在前面处理的时候，remote_ids已经直接表示其在所属分区上的ID，因此这里可以直接赋值，不需要再进行局部ID范围的调整。
+                    # Check whether partition i has nodes associated with the current rank partition. (Or, is there any nodes in the current partition that are used as halo nodes in the remote partition) 
+                    # From the perspective of partition i, these nodes are HALO nodes from partition rank, and partition i requires recv_idx. 
+                    # Therefore, for partition rank, it is relatively send_idx. 
+                    # Since remote_ids has directly represented its ID on the partition to which it belongs, it can be assigned directly here without adjusting the local ID range.
                     if rank in temp_send_buffer_list[part_i].keys():
                         temp_send_idx[part_i] = temp_send_buffer_list[part_i][rank][0]  # data from part_i to rank
                         scores[part_i] = temp_send_buffer_list[part_i][rank][1]         # score from part_i to rank
@@ -272,45 +272,45 @@ class CSPart(object):
 
     def _get_agg_scores(self, local_graph: dgl.DGLHeteroGraph, belong2i_mask: Tensor, nodes_feats: Dict[str, Tensor], model_type: DistGNNType):
         '''
-        返回本地图中每个节点的前向和后向的聚合得分，这些得分用于评估节点的重要性或影响力。
+        Returns the forward and backward aggregation scores for each node in the local map that are used to evaluate the importance or influence of the node.
         '''
         halo_nodes = local_graph.nodes()[belong2i_mask]
-        fp_local_halo_out_node_ids = local_graph.out_edges(halo_nodes)[1]      # 当前分区图中，halo节点的前向邻居（即出边的目标节点）
-        fp_local_out_degrees = local_graph.out_degrees(halo_nodes)  # 当前分区图中，halo节点的出度
-        bp_neighbor_ids = local_graph.in_edges(halo_nodes)[0]       # 当前分区图中，halo节点的后向邻居（即入边的源节点）
-        bp_local_degrees = local_graph.in_degrees(halo_nodes)       # 当前分区图中，halo节点的入度
+        fp_local_halo_out_node_ids = local_graph.out_edges(halo_nodes)[1]   # In the current partition graph, the forward neighbor of the halo node (i.e. the target node that exits the edge)
+        fp_local_out_degrees = local_graph.out_degrees(halo_nodes)          # In the current partition diagram, the output degree of the halo node
+        bp_neighbor_ids = local_graph.in_edges(halo_nodes)[0]               # In the current partition graph, the backward neighbor of the halo node (i.e. the source node entering the edge)
+        bp_local_degrees = local_graph.in_degrees(halo_nodes)               # In the current partition graph, the entry of the halo node
 
-        # 删除的点：
-        #    一方面，有限删除对当前分区的影响最小，这样对精度影响也小。
-        #    另一方面，优先保留出现次数多的，这样可以避免额外可能的通信。
+        # Delete points: 
+        # On the one hand, limited deletion has the least impact on the current partition, which also has a small impact on accuracy. 
+        # On the other hand, priority is given to retaining more frequent occurrences, which can avoid additional possible communications.
         if model_type is DistGNNType.DistGCN:
-            # 前向聚合得分:
-            # - 计算前向邻居的全局度数 fp_global_out_degrees。
-            # - 对每个前向邻居的入度进行开方倒数的计算，并按节点的出度进行分割和求和，得到前向聚合得分 fp_agg_score。
-            # - 局部图中，每个halo节点的出度，占多少个该节点在全局图中入度的根号的倒数？
+            # Forward aggregation score:
+            # - Calculate the global degrees of the forward neighbor fp_global_out_degrees. 
+            # - Calculate the incoming degree of each forward neighbor and divide and sum according to the outgoing degree of the node to obtain the forward aggregation score fp_agg_score. 
+            # - In the local graph, how many nodes in the outgoing degree of each halo node occupy the invoice number of the node in the global graph?
 
-            # 每个halo节点所指向的内点在全图中的入度数。值越大，说明这个内点在前向传播时要接收的数据越多。
+            # The number of incoming points to the inner point to by each halo node in the whole graph. The larger the value, the more data this inner point needs to receive when propagating forward.
             fp_global_in_degrees = nodes_feats['in_degrees'][fp_local_halo_out_node_ids].float().clamp(min=1) 
-            # 每个halo节点在全图中的出度数。出度越多，说明该节点在全图中可能比较重要。但是在当前分区中，由于他是halo节点，所以不一定。
+            # The output degree of each halo node in the whole graph. The more output, the more important the node may be in the whole graph. But in the current partition, since it is a halo node, it is not necessarily true.
             fp_global_out_degrees = nodes_feats['out_degrees'][belong2i_mask]                        
-            # 其实是对fp_global_in_degrees的归一化（平方根的倒数）。值越大，score越小，说明这个halo节点对某个内点会产生的影响越小，因为内点有很多其他可接收的点。
+            # In fact, it is a normalization of fp_global_in_degrees (the reciprocal of square root). The larger the value, the smaller the score, which means that the halo node will have a smaller impact on an inner point, because there are many other points that can be received by the inner point.
             score = torch.pow(fp_global_in_degrees, -0.5).split(fp_local_out_degrees.tolist())     
-            # 对每个halo节点的邻居进行加权求和。对出度数取平方根的倒数，则出度越多，值越小。出度越多，说明即使这个halo节点在当前分区被删除，但在其他分区也可能会被用到。
+            # A weighted sum of neighbors of each halo node. Take the inverse of the square root of the output degree, the more the output degree, the smaller the value. The more output, the more the halo node is deleted in the current partition, it may be used in other partitions.
             fp_agg_score = torch.tensor([torch.sum(score[i] * torch.pow(fp_global_out_degrees[i].float().clamp(min=1), -0.5)) for i in range(len(score))])
-            # 后向聚合得分:
-            # - 计算后向邻居的全局度数 bp_global_degrees。
-            # - 对每个后向邻居的出度进行开方倒数的计算，并按节点的入度进行分割和求和，得到后向聚合得分 bp_agg_score。
+            # Backward aggregation score:
+            # - Calculate the global degrees of backward neighbors bp_global_degrees.
+            # - Calculate the square countdown of the outgoing degree of each backward neighbor, and divide and sum according to the incoming degree of the node to obtain the backward aggregation score bp_agg_score.
             bp_global_out_degrees = nodes_feats['out_degrees'][bp_neighbor_ids].float().clamp(min=1)
             bp_global_in_degrees = nodes_feats['in_degrees'][belong2i_mask]
             score = torch.pow(bp_global_out_degrees, -0.5).split(bp_local_degrees.tolist())
             bp_agg_score = torch.tensor([torch.sum(score[i] * torch.pow(bp_global_in_degrees[i].float().clamp(min=1), -0.5)) for i in range(len(score))])
         elif model_type is DistGNNType.DistSAGE:
-            # 前向聚合得分:
-            # - 对每个前向邻居的入度进行倒数的计算，并按节点的出度进行分割和求和，得到前向聚合得分 fp_agg_score。
+            # Forward Aggregation Score:
+            # - The incoming degree of each forward neighbor is calculated inverted, and segmented and summed according to the outgoing degree of the node to obtain the forward aggregation score fp_agg_score.
             score = torch.pow(nodes_feats['in_degrees'][fp_local_halo_out_node_ids].float().clamp(min=1), -1).split(fp_local_out_degrees.tolist())
             fp_agg_score = torch.tensor([torch.sum(value) for value in score])
-            # 后向聚合得分:
-            # - 对每个后向邻居的出度进行倒数的计算，并按节点的入度进行分割和求和，得到后向聚合得分 bp_agg_score。
+            # Backward aggregation score:
+            # - The outgoing degree of each backward neighbor is calculated inversely, and segmented and summed according to the incoming degree of the node to obtain the backward aggregation score bp_agg_score.
             score = torch.pow(nodes_feats['out_degrees'][bp_neighbor_ids].float().clamp(min=1), -1).split(bp_local_degrees.tolist())
             bp_agg_score = torch.tensor([torch.sum(value) for value in score])
         else:
@@ -319,19 +319,19 @@ class CSPart(object):
 
     def convert_send_idx(self, original_send_idx: Basic_Buffer_Type) -> Tuple[Dict[int, Tuple[int, int]], Tensor]:
         '''
-        计算在每个分区i上，send_idx的起止位置(converted_send_idx[i])和具体的ID(total_idx[:xxx])
-        注意：此函数应在图重新排序后调用。
+        Calculate the start and end position of send_idx (converted_send_idx[i]) and the specific ID (total_idx[:xxx]) on each partition i. 
+        Note: This function should be called after the graph is reordered.
         '''
         offset = 0
         converted_send_idx: Dict[int, Tuple[int, int]] = {}
         total_idx = []
-        # 计算发往其他每个分区的节点的起止ID范围
+        # Calculate the start and end ID range of nodes sent to each other partition
         for k, v in original_send_idx.items():
             converted_send_idx[k] = (offset, offset + len(v))
             offset += len(v)
             total_idx.append(v)
         total_idx = torch.cat(total_idx) if len(total_idx) else total_idx
-        # converted_send_idx只记录起止范围, total_idx记录实际的ID
+        # converted_send_idx only records the start and end range, total_idx records the actual ID
         return converted_send_idx, total_idx
 
     def _reorder(self,
@@ -342,36 +342,36 @@ class CSPart(object):
                  num_central: int,
                  m_mask: torch.Tensor,
                  c_mask: torch.Tensor):
-        # 获取索引
+        # Get index
         c_indices = c_mask.nonzero(as_tuple=True)[0][:num_central]
         m_indices = m_mask.nonzero(as_tuple=True)[0][:num_inner - num_central]
 
-        # 生成新编号映射
-        new_id = torch.full((num_inner,), -1, dtype=torch.long)  # 初始化为 -1，防止未赋值
+        # Generate new numbered map
+        new_id = torch.full((num_inner,), -1, dtype=torch.long)  # Initialize to -1 to prevent unassigned values
         new_id[c_indices] = torch.arange(num_central, dtype=torch.long)
         new_id[m_indices] = torch.arange(num_central, num_inner, dtype=torch.long)
 
-        # 确保所有 num_inner 内的节点都被正确映射
-        assert (new_id >= 0).all(), "new_id 赋值不完整，可能有未定义索引！"
+        # Make sure all nodes within num_inner are mapped correctly
+        assert (new_id >= 0).all(), "The new_id assignment is incomplete, and there may be an undefined index!"
 
-        # 重新编号边索引
+        # Renumber edge index
         u, v = input_graph.edges()
         mask_u = u < num_inner
         mask_v = v < num_inner
         u[mask_u] = new_id[u[mask_u].long()]
         v[mask_v] = new_id[v[mask_v].long()]
 
-        # 构造新的 DGL 图
+        # Construct a new DGL diagram
         reordered_graph = dgl.heterograph(
             {etype: (u, v) for etype in input_graph.etypes}) if input_graph.is_hetero else dgl.graph((u, v))
 
-        # 重新排列节点特征
+        # Rearrange node features
         for key in nodes_feats:
             new_feats = torch.zeros_like(nodes_feats[key][:num_inner])
             new_feats[new_id] = nodes_feats[key][:num_inner]
             nodes_feats[key] = new_feats
 
-        # 重新映射 send_idx
+        # Remap send_idx
         for key in send_idx:
             mask = send_idx[key] < num_inner
             send_idx[key][mask] = new_id[send_idx[key][mask]]
@@ -388,63 +388,63 @@ class CSPart(object):
                  c_mask):
         '''
         reorder local nodes and return new graph and feats dict
-        - 在原graph中，中心节点的ID(如[0,2,5,6,7])和边缘节点的ID(如[1,3,4,8,9])可能是不连续的，这里对他们进行重排以便后续处理。
-        - 具体来说，中心节点的ID范围排在前面(如0~10)，边缘节点的ID范围排在后面(如11~20), 对于HALO节点不处理(如21~50)。
-        - 注意，只是ID范围变了，而他们的位置没有变，还是交错的(如[0,1,11,12,2,13,3,14,15,16,4,...])。
+        - In the original graph, the ID of the center node (such as [0, 2, 5, 6, 7]) and the ID of the edge node (such as [1, 3, 4, 8, 9]) may be discontinuous, and they are rearranged here for subsequent processing.
+        - Specifically, the ID range of the central node is ranked first (such as 0~10), and the ID range of the edge node is ranked behind (such as 11~20), and it is not processed for the HALO node (such as 21~50).
+        - Note that the ID range has changed, but their positions have not changed, and they are still interlaced (such as [0,1,11,12,2,13,3,14,15,16,4,...]).
         '''
-        # 生成一个序列用于记录节点ID
+        # Generate a sequence for recording node ID
         new_id = torch.zeros(size=(num_inner,), dtype=torch.long)
-        # 对于 c_mask 中的前 num_inner 个元素，将 new_id 对应位置设为从 0 到 num_central-1 的值
-        # c_mask和m_mask均包含内部节点和HALO节点，因此需要取前num_inner个，即都是内部节点
+        # For the first num_inner elements in c_mask, set the corresponding position of new_id to the value from 0 to num_central-1
+        # c_mask and m_mask both contain internal nodes and HALO nodes, so the first num_inners need to be taken, that is, they are all internal nodes
         new_id[c_mask[:num_inner]] = torch.arange(num_central, dtype=torch.long)
-        # 对于 m_mask 中的前 num_inner 个元素，将 new_id 对应位置设为从 num_central 到 num_inner-1 的值
+        # For the first num_inner elements in m_mask, set the corresponding position of new_id to the value from num_central to num_inner-1
         new_id[m_mask[:num_inner]] = torch.arange(num_central, num_inner, dtype=torch.long)
-        # 获取输入图的边（u 和 v）
+        # Get edges (u and v) of the input graph
         u, v = input_graph.edges()
-        # 对于小于 num_inner 的 u 和 v 值，使用 new_id 进行替换。
-        # 因为graph中的u、v包含了HALO节点，因此小于num_inner是为了只取内部节点。
-        # 重新映射内部节点ID到new_id的范围内, 对于HALO节点不处理。
+        # For u and v values ​​smaller than num_inner, use new_id for replacement.
+        # Because u and v in graph contain HALO nodes, it is smaller than num_inner to only take internal nodes.
+        # Remap the internal node ID to the range of new_id, and will not be processed for HALO nodes.
         u[u < num_inner] = new_id[u[u < num_inner].long()]
         v[v < num_inner] = new_id[v[v < num_inner].long()]
-        # 使用更新后的 u 和 v 创建一个新的图
+        # Create a new graph using the updated u and v
         reordered_graph = dgl.graph((u, v))
-        # 遍历 nodes_feats 中的每个键，将其特征根据 new_id 进行重新排列。
-        # 由于new_id中节点的位置没有变，只是他的值变了，所以左边的位置跟右边的位置对应，可以直接赋值。
+        # Iterate through each key in nodes_feats and rearrange its features according to new_id.
+        # Since the position of the node in new_id has not changed, its value has changed, so the left position corresponds to the right position, and you can directly assign the value.
         for key in nodes_feats: nodes_feats[key][new_id] = nodes_feats[key].clone()[0:num_inner]
-        # 遍历 send_idx 中的每个键，按照 new_id 对其进行重新排列
+        # Iterate through each key in send_idx and rearrange it by new_id
         for key in send_idx: send_idx[key] = new_id[send_idx[key]]
         return reordered_graph, nodes_feats, send_idx
 
     def reorder_graph(self, graph_info):
-        # 将图的节点和特征重新排序为内部节点、边缘节点和中心节点。
-        #   marginal nodes: 边缘节点, 在其他设备上具有远程邻居的节点;
-        #   central nodes: 中心节点, 没有远程邻居的节点. 即内部节点中不是边缘节点的部分;
+        # Reorder the nodes and features of the graph into internal nodes, edge nodes, and central nodes.
+        #   marginal nodes: edge nodes, nodes with remote neighbors on other devices;
+        #   central nodes: a central node, a node without a remote neighbor. That is, the part of the internal node that is not an edge node;
         for rank in range(self.partition_size):
             g_info = graph_info[rank]
             original_graph: DGLHeteroGraph = g_info.graph
             nodes_feats: Dict[str, Tensor] = g_info.node_feats
             send_idx: Basic_Buffer_Type = g_info.send_idx
 
-            # 获取内部节点掩码(包含了HALO节点，但其值是False)
+            # Get the internal node mask (including the HALO node, but its value is False)
             inner_mask = nodes_feats['inner_node']
-            # 计算值为True的数量，也就是真正的内部节点的数量
+            # The number of calculated values ​​is True, that is, the number of real internal nodes
             num_inner = torch.count_nonzero(inner_mask).item()
-            # 获取远程节点。除了内部节点，剩下的都是远程节点(也就是取出HALO节点)
+            # Get the remote node. Except for the internal nodes, the rest are remote nodes (that is, take out the HALO nodes)
             halo_remote_nodes = original_graph.nodes()[~inner_mask]
-            # 通过获取远程节点的出边, 来提取内部边缘节点marginal_nodes
+            # By obtaining the out edge of the remote node, the internal edge node marginal_nodes is extracted
             _, v = original_graph.out_edges(halo_remote_nodes)
-            # 可能有重复，即指向了同一个目标节点，需要去重
+            # There may be duplication, that is, it points to the same target node and needs to be replicated.
             marginal_nodes = torch.unique(v)
-            # 标记边缘节点和中心节点(即内部节点中不是边缘节点的部分)，包含HALO节点
+            # Mark edge nodes and center nodes (i.e., parts of the internal nodes that are not edge nodes), including HALO nodes
             marginal_mask = torch.zeros_like(inner_mask, dtype=torch.bool)
             marginal_mask[marginal_nodes] = True
-            # 内部节点中，不是marginal_nodes的都认为是central_nodes;
-            # 为了长度统一，因此拼接了HALO节点，不过都是False
+            # In the internal node, those that are not marginal_nodes are considered central_nodes;
+            # In order to have uniform lengths, HALO nodes are spliced, but they are all False
             central_mask = torch.concat([~marginal_mask[:num_inner], marginal_mask[num_inner:]])
             num_marginal = torch.count_nonzero(marginal_mask).item()
             num_central = torch.count_nonzero(central_mask).item()
 
-            # 让中心节点的ID范围排在前面(如0~10)，边缘节点的ID范围排在后面(如11~20), 对于HALO节点不处理(如21~50)。
+            # Let the ID range of the central node be ranked first (such as 0~10), and the ID range of the edge node be ranked behind (such as 11~20), and the HALO node is not processed (such as 21~50).
             # reordered_graph, reordered_feats, reordered_send_idx = self._reorder(original_graph, nodes_feats,
             #                                                                      send_idx, num_inner, num_central,
             #                                                                      marginal_mask, central_mask)
@@ -457,8 +457,8 @@ class CSPart(object):
             assert reordered_graph.num_nodes() == original_graph.num_nodes()
             assert reordered_graph.num_edges() == original_graph.num_edges()
             assert num_inner == num_central + num_marginal
-            # 计算在每个远程分区i上，send_idx的起止位置和具体的ID.
-            # 如: 对于当前是分区1来说，有send_idx={0: (0, 17660), 2: (17660, 36595)} total_idx=[xx,xx,xx,...,xx]
+            # Calculate the start and end position and specific ID of send_idx on each remote partition i.
+            # For example: For now partition 1, there is send_idx={0: (0, 17660), 2: (17660, 36595)} total_idx=[xx,xx,xx,...,xx]
             send_idx, total_idx = self.convert_send_idx(reordered_send_idx)
 
             g_info.graph = reordered_graph
@@ -473,25 +473,25 @@ class CSPart(object):
 
     def assignment_graphs(self, gpus, graph_info):
         '''
-        将GPU与分区绑定。注意需要按照算力从弱到强依次跟图绑定，即self.graph_info[0]绑定的是最弱的GPU。
-        子图的分区ID与sorted_gpu_ids的索引对应，与GPU ID没有关系。
+        Bind the GPU to the partition. Note that you need to bind to the graph in order from weak to strong computing power, that is, self.graph_info[0] is bound to the weakest GPU. 
+        The partition ID of the subgraph corresponds to the index of sorted_gpu_ids and has nothing to do with the GPU ID.
         '''
-        assert len(gpus.split(',')) == len(graph_info), ">> GPU数与分区数不相同 <<"
+        assert len(gpus.split(',')) == len(graph_info), ">> The number of GPUs is different from the number of partitions <<"
         gpu_list = list(map(int, gpus.split(',')))
-        # 按指标值降序排序，并获取对应的GPU设备key。值越大，计算成本越大，GPU越弱。
+        # Sort by indices value descending order and get the corresponding GPU device key. The larger the value, the greater the calculation cost and the weaker the GPU.
         self.sorted_gpu_ids = get_gpu_capability(gpu_list)
-        # 首次是随便指定GPU和graph
+        # The first time is to specify the GPU and graph casually
         for i, g in enumerate(graph_info):
-            print(f"<分配 {torch.cuda.get_device_name(self.sorted_gpu_ids[i])}[{self.sorted_gpu_ids[i]}] 给 subgraph {i}>")
+            print(f"<assign {torch.cuda.get_device_name(self.sorted_gpu_ids[i])}[{self.sorted_gpu_ids[i]}] to subgraph {i}>")
             g.device = torch.device(f"cuda:{self.sorted_gpu_ids[i]}")
             # g.num_remote = torch.count_nonzero(g.graph.nodes_feats['outer_node']).item()
             self.assig_graphs_gpus[self.sorted_gpu_ids[i]] = g
         return self.assig_graphs_gpus
 
     def check_graph_connectivity(self, graph):
-        # 将 DGL 图转换为 NetworkX 图
+        # Convert DGL diagram to NetworkX diagram
         nx_graph = graph.to_networkx().to_undirected()
-        # 使用 NetworkX 检查连通性
+        # Check connectivity with NetworkX
         if nx.is_connected(nx_graph):
             print("The graph is connected.")
             return True
@@ -572,42 +572,42 @@ class CSPart(object):
     def adjust_once(self, assig_graphs_gpus):
         result = [False for _ in range(len(assig_graphs_gpus))]
         records = []
-        # 4. 从最弱的GPU开始选起
+        # Start with the weakest GPU
         for index in range(len(self.sorted_gpu_ids)):
             gpu_id = self.sorted_gpu_ids[index]
-            # 计算λ及其平均值λ_mean
+            # Calculate λ and its average value λ_mean
             lam, lam_mean, lam_std, halo_edges = self.calculate_target(assig_graphs_gpus)
             initial_halo_edges = halo_edges[index]
             print(f"gpu_id: {gpu_id}[{index}], lam - mean: {lam[index] - lam_mean}[{lam[index]} - {lam_mean}]")
 
-            # 找到该分区上所有的halo节点
+            # Find all halo nodes on this partition
             g_info = assig_graphs_gpus[gpu_id]
             local_graph = g_info.graph
             nodes_feats = g_info.node_feats
             gpb = g_info.gpb
-            part_id = gpb.partid  # 该graph所属的分区ID
+            part_id = gpb.partid  # The partition ID of the graph belongs to
 
-            # 选择λ_i大于λ_mean的GPU。小于等于的先跳过
+            # Select a GPU with λ_i greater than λ_mean. Skip first if less than or equal
             nodes = local_graph.num_nodes()
             edges = local_graph.num_edges()
             if lam[index] <= lam_mean and gpu_memory_enough(gpu_id=gpu_id, num_nodes=nodes, num_edges=edges, feats=nodes_feats["feat"], beta=1e8):
                 result[index] = True
-                print(f"分区{part_id}无变化")
-                print(f"节点数无变化： {g_info.graph.num_nodes()}")
-                print(f"边数的无变化： {g_info.graph.num_edges()}")
-                print(f"分数的无变化： {lam[index]}")
+                print(f"Partition {part_id} has no change")
+                print(f"No change in the number of nodes: {g_info.graph.num_nodes()}")
+                print(f"No change in edge count: {g_info.graph.num_edges()}")
+                print(f"No change in scores: {lam[index]}")
                 records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>', g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index]])
                 continue
 
             halo_local_offset_start = len(torch.nonzero(nodes_feats['inner_node']))
             halo_local_masks = (nodes_feats['part_id'] != part_id)
             halo_nodes = local_graph.nodes()[halo_local_masks]
-            # 获取halo节点在当前分区上的索引
+            # Get the index of the halo node on the current partition
             halo_local_idxs = torch.nonzero(halo_local_masks).view(-1)
             halo_global_ids = nodes_feats[dgl.NID][halo_local_idxs]
 
 
-            # 计算这些halo节点的聚合分数
+            # Calculate the aggregate scores of these halo nodes
             # agg_scores = self._get_agg_scores(local_graph, halo_local_masks, nodes_feats, self.model_type)
             # sorted_scores, ori_idxs = torch.sort(agg_scores[0] + agg_scores[1], descending=False)
 
@@ -616,50 +616,50 @@ class CSPart(object):
             scores = (agg_scores[0] + agg_scores[1]) * torch.tensor(self.global_id_counter[1])[indices]
             sorted_scores, ori_idxs = torch.sort(scores, descending=False)
 
-            # 选出分数最高的一个
+            # Choose the one with the highest score
             nodes_to_remove_id = []
             nodes_to_remove_idx = []
-            # 初始的剩余节点数和边数
+            # The number of remaining nodes and edges in the initial
             remaining_inner_nodes = torch.count_nonzero(nodes_feats['inner_node']).item()
             remaining_all_nodes = local_graph.num_nodes()
             remaining_edges = local_graph.num_edges()
             initial_halo_nodes_count = torch.count_nonzero(halo_local_masks)
-            # 跟踪已删除的边以避免重复计数
+            # Track deleted edges to avoid duplicate counting
             removed_edges_set = set()
-            # 预估移除节点和边数的影响
+            # Estimate the impact of removing nodes and edges
             estimated_lam_reduction = 0
 
             for i, (score, idx) in enumerate(zip(sorted_scores, ori_idxs)):
                 max_score_idx = idx.item()
                 halo_local_node_id = halo_nodes[max_score_idx].item()
-                # 获取节点的边并考虑重复
+                # Get the edge of the node and consider duplication
                 max_score_node_edges = local_graph.out_edges(halo_local_node_id, form='eid').tolist()
                 for edge_id in max_score_node_edges:
                     if edge_id not in removed_edges_set:
                         removed_edges_set.add(edge_id)
                         remaining_edges -= 1
-                # 检查该节点是否是内点，只有在是内点时才减少 remaining_inner_nodes
+                # Check whether the node is an inner point, and only reduce remainsing_inner_nodes when it is an inner point
                 # if nodes_feats['inner_node'][halo_local_node_id].item(): remaining_inner_nodes -= 1
                 remaining_all_nodes -= 1
                 remaining_halo_nodes = initial_halo_nodes_count - len(nodes_to_remove_id)
                 remaining_halo_edges = initial_halo_edges - len(removed_edges_set)  # len(removed_edges_set.intersection(max_score_node_edges))
 
-                # 估算移除后的 T_comp 和 T_comm
+                # Estimate the removed T_comp and T_comm
                 t1 = self.calculate_T_comp(gpu_id, num_nodes=remaining_inner_nodes, num_edges=remaining_edges)
                 t2 = self.calculate_T_comm(gpu_id, E_outer=remaining_halo_edges)
                 estimated_lam_reduction = t1 + t2
-                # 如果预估的lambda变化接近lam_mean - lam[index]，则停止选择
+                # If the estimated lambda change is close to lam_mean - lam[index], then select
                 if estimated_lam_reduction <= (lam[index] + lam_mean)/2 and gpu_memory_enough(gpu_id=gpu_id, num_nodes=remaining_all_nodes, num_edges=remaining_edges, feats=nodes_feats["feat"], beta=1e8): break
                 nodes_to_remove_id.append(halo_local_node_id)
                 nodes_to_remove_idx.append(halo_local_idxs[max_score_idx])
-            # 删除选定的节点
+            # Delete selected nodes
             if len(nodes_to_remove_id) > 0:
-                print(f"为分区{part_id}删除了{len(nodes_to_remove_id)}个节点")
+                print(f"{len(nodes_to_remove_id)} nodes were deleted for partition {part_id}")
                 new_graph = dgl.remove_nodes(local_graph, torch.tensor(nodes_to_remove_id))
                 new_node_feats = {key: value[~torch.isin(torch.arange(value.size(0)), torch.tensor(nodes_to_remove_idx))] for key, value in nodes_feats.items()}
-                print(f"节点数变化： {g_info.graph.num_nodes()} => {new_graph.num_nodes()}")
-                print(f"边数的变化： {g_info.graph.num_edges()} => {new_graph.num_edges()}")
-                print(f"分数的变化： {lam[index]} => {estimated_lam_reduction}")
+                print(f"Changes in the number of nodes: {g_info.graph.num_nodes()} => {new_graph.num_nodes()}")
+                print(f"Changes in edge count: {g_info.graph.num_edges()} => {new_graph.num_edges()}")
+                print(f"Changes in scores: {lam[index]} => {estimated_lam_reduction}")
                 records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>', new_graph.num_nodes(), new_graph.num_edges(), estimated_lam_reduction])
                 g_info.graph = new_graph
                 g_info.node_feats = new_node_feats
@@ -673,13 +673,13 @@ class CSPart(object):
                 assig_graphs_gpus[gpu_id] = g_info
             else:
                 result[index] = True
-                print(f"分区{part_id}无变化")
-                print(f"节点数无变化： {g_info.graph.num_nodes()}")
-                print(f"边数的无变化： {g_info.graph.num_edges()}")
-                print(f"分数的无变化： {lam[index]}")
+                print(f"Partition {part_id} has no change")
+                print(f"No change in the number of nodes: {g_info.graph.num_nodes()}")
+                print(f"No change in edge count: {g_info.graph.num_edges()}")
+                print(f"No change in scores: {lam[index]}")
                 records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>', g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index]])
 
-            # 计算并对比目标值，若仍大于，则继续删除
+            # Calculate and compare the target value. If it is still greater than, continue to delete it.
             print('*' * 50)
         return assig_graphs_gpus, result, records
 
@@ -700,7 +700,7 @@ class CSPart(object):
         print('')
         print('*' * 50)
 
-        # 效果信息输出
+        # Effect information output
         lam_prev, lam_mean_prev, lam_std_prev, _ = self.calculate_target(self.assig_graphs_gpus)
         lam, lam_mean, lam_std, _ = self.calculate_target(assig_graphs_gpus)
         for index in range(len(self.sorted_gpu_ids)):
@@ -708,9 +708,9 @@ class CSPart(object):
             g_info_prev = self.assig_graphs_gpus[gpu_id]
             g_info = assig_graphs_gpus[gpu_id]
             print(f"GPU: {gpu_id}")
-            print(f"分区: {g_info.gpb.partid}")
-            print(f"节点数: {g_info_prev.graph.num_nodes()}[in:{g_info_prev.num_inner}] => {g_info.graph.num_nodes()}[in:{g_info.num_inner}]")
-            print(f"边数: {g_info_prev.graph.num_edges()} => {g_info.graph.num_edges()}")
+            print(f"Partition: {g_info.gpb.partid}")
+            print(f"Number of nodes: {g_info_prev.graph.num_nodes()}[in:{g_info_prev.num_inner}] => {g_info.graph.num_nodes()}[in:{g_info.num_inner}]")
+            print(f"Number of edges: {g_info_prev.graph.num_edges()} => {g_info.graph.num_edges()}")
             print(f"lam: {lam_prev[index]} => {lam[index]}")
             print(f"lam_mean: {lam_mean_prev} => {lam_mean}")
             print(f"lam_std: {lam_std_prev} => {lam_std}")
@@ -731,28 +731,28 @@ class CSPart(object):
             nodes = local_graph.num_nodes()
             edges = local_graph.num_edges()
             if gpu_memory_enough(gpu_id=gpu_id, num_nodes=nodes, num_edges=edges, feats=nodes_feats["feat"], beta=1e8):
-                print(f"分区{part_id}无需删除节点")
+                print(f"Partition {part_id} does not require node deletion")
                 continue
 
             halo_local_masks = (nodes_feats['part_id'] != part_id)
-            # 获取halo节点在当前分区上的索引
+            # Get the index of the halo node on the current partition
             halo_local_idxs = torch.nonzero(halo_local_masks).view(-1)
-            # 计算这些halo节点的聚合分数
+            # Calculate the aggregate scores of these halo nodes
             agg_scores = self._get_agg_scores(local_graph, halo_local_masks, nodes_feats, self.model_type)
-            # 简单起见，先用forward_score，之后再考虑forward+backward。对于无向图，两者应该是一样的。
+            # For simplicity, use forward_score first, and then consider forward+backward. For undirected graphs, both should be the same.
             forward_scores = agg_scores[0]
             # backward_scores = agg_scores[1]
             scores = forward_scores  # + backward_scores
             sorted_scores, ori_idxs = torch.sort(scores, descending=False)
 
-            # 选出分数最高/低的一个
+            # Select the highest/lowest score
             nodes_to_remove = []
             remaining_all_nodes = local_graph.num_nodes()
             remaining_edges = local_graph.num_edges()
-            # 跟踪已删除的边以避免重复计数
+            # Track deleted edges to avoid duplicate counting
             removed_edges_set = set()
             initial_halo_nodes_count = len(halo_local_idxs)
-            # 预估移除节点和边数的影响
+            # Estimate the impact of removing nodes and edges
             for i, (score, idx) in enumerate(zip(sorted_scores, ori_idxs)):
                 max_score_idx = idx.item()
                 halo_local_node_id = halo_local_idxs[max_score_idx].item()
@@ -768,20 +768,20 @@ class CSPart(object):
                 remaining_halo_nodes = initial_halo_nodes_count - len(nodes_to_remove)
                 if remaining_halo_nodes <= 0: break
 
-            # 删除选定的节点
+            # Delete selected nodes
             if nodes_to_remove:
-                print(f"为分区{part_id}删除了{len(nodes_to_remove)}个节点")
+                print(f"{len(nodes_to_remove)} nodes were deleted for partition {part_id}")
                 nodes_to_remove_tensor = torch.tensor(nodes_to_remove)
                 new_graph = dgl.remove_nodes(local_graph, nodes_to_remove_tensor)
                 new_node_feats = {key: value[~torch.isin(torch.arange(value.size(0)), nodes_to_remove_tensor)] for
                                   key, value in nodes_feats.items()}
-                print(f"节点数变化：{g_info.graph.num_nodes()} => {new_graph.num_nodes()}")
-                print(f"边数的变化：{g_info.graph.num_edges()} => {new_graph.num_edges()}")
+                print(f"Changes in the number of nodes:{g_info.graph.num_nodes()} => {new_graph.num_nodes()}")
+                print(f"Changes in edge count:{g_info.graph.num_edges()} => {new_graph.num_edges()}")
                 g_info.graph = new_graph
                 g_info.node_feats = new_node_feats
                 g_info.num_inner = torch.sum(new_node_feats['inner_node']).item()
                 assig_graphs_gpus[gpu_id] = g_info
-            # 计算并对比目标值，若仍大于，则继续删除
+            # Calculate and compare the target value. If it is still greater than, continue to delete it.
             print('*' * 50)
         return assig_graphs_gpus
 
@@ -790,7 +790,7 @@ class CSPart(object):
         all_part_nodes_feats = []
         halo_node_features = {}
         model_type = DistGNNType.DistGCN
-        # 加载pkl文件  /home/sxf/Desktop/gnn/dist_gnn_fullbatch
+        # Loading pkl file /home/sxf/Desktop/gnn/dist_gnn_fullbatch
         partition_file = f'{part_dir}/{dataset}/{part_size}part/{dataset}_processed_partitions_{our_partition}_{sorted(gpus_list)}.pkl'
         with open(partition_file, 'rb') as f:
             assig_graphs_gpus = pickle.load(f)
@@ -816,7 +816,7 @@ class CSPart(object):
 
                 # select top k
                 top_k_ids = halo_global_ids[ori_idxs[:k] if k > 0 else ori_idxs]
-                # 从分区i中批量提取halo节点的特征
+                # Batch extraction of halo node features from partition i
                 remote_g, part_i_nodes_feats = all_part_nodes_feats[i]
                 halo_remote_mask = torch.isin(part_i_nodes_feats[dgl.NID], top_k_ids)
                 halo_remote_idx = torch.nonzero(halo_remote_mask).view(-1)
@@ -827,24 +827,21 @@ class CSPart(object):
                     temp[global_id.item()] = feature
                 halo_node_features.update(temp)
                 max_subg_size = max(max_subg_size, len(halo_global_ids))
-                print(f"[{part_id}-{i}]本次添加{len(temp.keys())}/{len(halo_global_ids)}个halo节点进来")
+                print(f"[{part_id}-{i}] This time, {len(temp.keys())}/{len(halo_global_ids)} halo nodes are added to come in.")
         return halo_node_features, max_subg_size
 
 
 def auto_select_dtype(feat_tensor):
     """
-    根据节点特征张量的实际内容，自动选择合适的数据类型。
-
-    参数:
-    feat_tensor (torch.Tensor): 节点特征张量 (float32 类型)
-
-    返回:
-    torch.dtype: 推荐的数据类型
+    Automatically select the appropriate data type according to the actual content of the node feature tensor. 
+    parameter:
+        feat_tensor (torch.Tensor): Node feature tensor (float32 type) Return:
+        torch.dtype: Recommended data types
     """
-    # 检查所有元素是否可以看作是整数
-    # 计算小数部分并判断其是否接近 0
+    # Check whether all elements can be regarded as integers 
+    # Calculate the fractional part and determine whether it is close to 0
     if torch.all((feat_tensor - torch.round(feat_tensor)) == 0):
-        # 如果所有数都接近整数，则转换为整数类型
+        # If all numbers are close to integers, then convert to integer type
         max_val = torch.max(feat_tensor)
         min_val = torch.min(feat_tensor)
         if min_val >= torch.iinfo(torch.int8).min and max_val <= torch.iinfo(torch.int8).max:
@@ -856,13 +853,13 @@ def auto_select_dtype(feat_tensor):
         else:
             return torch.int64
     else:
-        # 如果是浮点数，根据浮点数的范围和标准差来判断
+        # If it is a floating point number, judge based on the range and standard deviation of the floating point number
         min_val = torch.min(feat_tensor)
         max_val = torch.max(feat_tensor)
-        # float16 的数值范围是大约 6.1e-5 到 65504
+        # The value range of float16 is approximately 6.1e-5 to 65504
         if min_val >= torch.iinfo(torch.float16).min and max_val <= torch.iinfo(torch.float16).max:
             std = torch.std(feat_tensor)
-            # 如果特征的范围较小，且精度要求不高，则可以用 float16
+            # If the range of features is small and the accuracy requirements are not high, it can use float16
             return torch.float16 if std < 1e-2 else torch.float32
         else:
             return torch.float32
@@ -916,7 +913,7 @@ def partition1():
 
     # python cspart.py --dataset_index=4 --part_num=5 --our_partition=1
     # python cspart.py -p=1 -d=6 -n=4 -g=0
-    # ------------参数主要修改区---------------- #
+    # ------------Main parameter modification area---------------- #
     test_load_part          = False
     threshold               = 0.01
     dataset_index           = args.dataset_index    or 6
@@ -931,34 +928,34 @@ def partition1():
     gpus                    = gpu_groups[tools.outer_ip][part_num][gpus_index]
     gpus_list = list(map(int, gpus.split(',')))
     cal_gpus_capability(gpus_list)
-    print(f'>> 数据集: {args.dataset_name}')
-    print(f'>> GPU列表: [{gpus_index}] => {gpus}')
-    print(f'>> 分区阈值: {threshold}')
-    print(f'>> 分区数量: {part_num}')
-    print(f'>> 分区方法: {part_method}')
-    print(f'>> 分区策略: {our_partition}')
+    print(f'>> Dataset: {args.dataset_name}')
+    print(f'>> GPU list: [{gpus_index}] => {gpus}')
+    print(f'>> Partition threshold: {threshold}')
+    print(f'>> Number of partitions: {part_num}')
+    print(f'>> Partition method: {part_method}')
+    print(f'>> Partition policy: {our_partition}')
 
     args = vars(args)
     app = CSPart(args)
-    # 1. 使用现成的分区算法进行预先分区；
+    # 1. Pre-partitioning using off-the-shelf partitioning algorithm;
     app.coarse_graph_patition(fast_skip=True, part_method=part_method, num_hops=1)
-    # 2. 构建局部加权图，即只为边缘的节点计算加权值；
-    # 加载分区的子图和特征
+    # 2. Construct a local weighted graph, that is, calculate the weighted value only for the edge nodes;
+    # Loading partition subgraphs and features
     app.coarse_load_patition()
     # dtype = auto_select_dtype(app.graph_info[0].node_feats['feat'])
-    # print('>> 原来的的数据类型：', app.graph_info[0].node_feats['feat'].dtype)
-    # print('>> 合适的数据类型：', dtype)
-    # 2.1 获取每个分区的发送、接收的顶点ID，以及边缘节点的度分数
+    # print('>> Original data type:', app.graph_info[0].node_feats['feat'].dtype)
+    # print('>> Suitable data types:', dtype)
+    # 2.1 Get the sent and received vertex IDs for each partition, and the degree score of the edge node
     app.get_send_recv_idx_scores(app.graph_info, skip_load=False, suffix='_init')
-    # 2,2 重新排列图中节点ID的顺序（从 0 到 N-1：中心节点->边缘节点->边远节点
+    # 2.2 Rearrange the order of node IDs in the graph (from 0 to N-1: Center Node->Edge Node->Remote Node
     app.reorder_graph(app.graph_info)
     # app.print_graph(0)
-    # 3. 为每个GPU预先分配一个分区
+    # 3. Pre-allocate a partition for each GPU
     assig_graphs_gpus = app.assignment_graphs(gpus, app.graph_info)
     app.get_halo_count()
     new_assig_graphs_gpus = copy.deepcopy(assig_graphs_gpus)
     if our_partition and len(gpus.split(',')) > 1: new_assig_graphs_gpus = app.do_partition(new_assig_graphs_gpus, threshold=threshold)
-    else: print(">> 不需要分区")
+    else: print(">> No partition required")
     print('=' * 100)
 
     new_graph_info = []
@@ -967,55 +964,55 @@ def partition1():
     app.reorder_graph(new_graph_info)
     for index in range(len(app.sorted_gpu_ids)): assig_graphs_gpus[app.sorted_gpu_ids[index]] = new_graph_info[index]
 
-    # 保存分区结果
+    # Save partition results
     partition_file = os.path.join(app.partition_dir, f'{app.dataset_name}/{app.partition_size}part/{app.dataset_name}_processed_partitions_{our_partition}_{sorted(gpus_list)}.pkl')
     with open(partition_file, 'wb') as f: pickle.dump(assig_graphs_gpus, f)
     print(f"Processed partitions saved to {partition_file}")
 
-    # 加载pkl文件
+    # Loading pkl file
     if test_load_part:
-        print("测试加载pkl文件")
+        print("Test loading pkl file")
         with open(partition_file, 'rb') as f: _ = pickle.load(f)
     print("=" * 100)
-    print(f"训练时，请务必按照以下的GPU顺序设置CUDA_VISIBLE_DEVICES：{','.join(map(str, app.sorted_gpu_ids))}")
+    print(f"When training, be sure to set CUDA_VISIBLE_DEVICES in the following GPU order：{','.join(map(str, app.sorted_gpu_ids))}")
 
     halo_node_features, _ = app.overlapping_our(part_size=args['partition_size'], dataset=args['dataset_name'], gpus_list=gpus_list, k=-1, part_dir='/mnt/disk/sxf/data/part_data', our_partition=our_partition)
-    print(f"最终有效的节点数：[{args['dataset_name']}][{our_partition}][{part_num}][{gpus_index}] => {len(halo_node_features.keys())}")
+    print(f"The final number of valid nodes: [{args['dataset_name']}][{our_partition}][{part_num}][{gpus_index}] => {len(halo_node_features.keys())}")
     del app
     torch.cuda.empty_cache()
     print('#' * 50)
 
 
 
-# 计算halo节点重复度
+# Calculate the halo node duplication
 def overlapping(dataset_name, partition_size):
     partition_dir = './data/part_data'
     part_config = f'{partition_dir}/{dataset_name}/{partition_size}part/{dataset_name}.json'
 
-    # 存储每个分区的 halo 节点全局 ID 和总节点数
+    # Stores the global ID of halo nodes and the total number of nodes per partition
     halo_global_ids_by_partition = defaultdict(set)
     total_nodes_by_partition = {}
     # in_degrees_by_partition = defaultdict(list)
     # out_degrees_by_partition = defaultdict(list)
 
-    # 循环读取每个分区的 halo 节点
+    # Looping the halo nodes of each partition
     for rank in range(partition_size):
         g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
-        # 获取halo节点（inner_node 为 False 的节点）
+        # Get the halo node (the node with inner_node False)
         halo_nodes = g.nodes()[~g.ndata['inner_node'].bool()].numpy()
-        # 使用 'dgl.NID' 来获取 halo 节点的全局 ID
+        # Use 'dgl.NID' to get the global ID of the halo node
         halo_global_ids = g.ndata[dgl.NID][halo_nodes].numpy()
-        # 存储该分区的 halo 节点全局 ID
+        # The global ID of the halo node that stores the partition
         halo_global_ids_by_partition[rank] = set(halo_global_ids)
-        # 存储该分区的总节点数
+        # Total number of nodes that store the partition
         total_nodes_by_partition[rank] = g.num_nodes()
-        # 获取该分区 halo 节点的原始 ID
+        # Get the original ID of the halo node in this partition
         orig_ids = g.ndata['orig_id'][halo_nodes].numpy()
-        # 存储入度和出度
+        # Store incoming and outgoing degrees
         # in_degrees_by_partition[rank] = in_degrees_global[orig_ids].numpy()
         # out_degrees_by_partition[rank] = out_degrees_global[orig_ids].numpy()
         
-    # 输出每个分区的 halo 节点数量和总节点数量
+    # Output the number of halo nodes and total number of nodes per partition
     for rank in range(partition_size):
         halo_count = len(halo_global_ids_by_partition[rank])
         total_count = total_nodes_by_partition[rank]
@@ -1024,26 +1021,26 @@ def overlapping(dataset_name, partition_size):
         # print(f"Part {rank} halo nodes: {halo_count}/{total_count}, Avg In-Degree: {avg_in_degree:.2f}, Avg Out-Degree: {avg_out_degree:.2f}")
         print(f"Part {rank} halo nodes: {halo_count}/{total_count}")
 
-    # 存储总的重合halo节点
+    # Store total overlapping halo nodes
     total_overlapping_halo_nodes_set = set()
     total_overlapping_halo_nodes = 0
-    # 比较各分区之间的 halo 节点重复情况并输出结果
+    # Compare the duplication of halo nodes between each partition and output the result
     for i in range(partition_size):
         for j in range(i + 1, partition_size):
-            # 获取两个分区的 halo 节点
+            # Get the halo nodes of two partitions
             halo_i = halo_global_ids_by_partition[i]
             halo_j = halo_global_ids_by_partition[j]
-            # 计算重合的 halo 节点数
+            # Calculate the number of overlapping halo nodes
             overlapping_halo_nodes = halo_i.intersection(halo_j)
             total_overlapping_halo_nodes += len(overlapping_halo_nodes)
-            # 更新总的重合halo节点集合
+            # Update the total overlapping halo node collection
             total_overlapping_halo_nodes_set.update(overlapping_halo_nodes)
-            # 输出结果
+            # Output result
             print(f"Part {i} - Part {j} -> Overlapping halo nodes: {len(overlapping_halo_nodes)}")
 
     print('*' * 50)
     print(f"Total overlapping halo nodes across all partitions: {total_overlapping_halo_nodes}")
-    # 输出总的重合halo节点数
+    # Output the total number of overlapping halo nodes
     print(f"Total overlapping halo nodes across all partitions (set): {len(total_overlapping_halo_nodes_set)}")
 
 
