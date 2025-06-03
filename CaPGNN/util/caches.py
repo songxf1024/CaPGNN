@@ -54,12 +54,12 @@ class BaseCache:
         return [id_ for id_ in ids if id_ not in ns_cache]
 
     def put_batch(self, ids, features, namespace="default"):
-        with self.lock:  # 使用锁确保线程安全
+        with self.lock:  # Use locks to ensure thread safety
             for id_, feature in zip(ids, features):
                 self.put(id_, feature, namespace)
 
     def get_batch(self, ids, namespace="default"):
-        with self.lock:  # 使用锁确保线程安全
+        with self.lock:  # Use locks to ensure thread safety
             cached_values = []
             cached_indices = []
 
@@ -142,7 +142,7 @@ class RANDCache(BaseCache):
         ns_cache = self._get_ns_cache(namespace)
         if id_ not in ns_cache:
             if len(ns_cache) >= self.capacity:
-                # 随机选择一个键进行淘汰
+                # Randomly select a key to eliminate
                 random_key = np.random.choice(list(ns_cache.keys()))
                 del ns_cache[random_key]
                 self.evictions += 1
@@ -169,7 +169,7 @@ class LFUCache(BaseCache):
             ns_cache[id_]['count'] += 1
         else:
             if len(ns_cache) >= self.capacity:
-                # 找到访问频率最低的键
+                # Find the key with the lowest access frequency
                 min_count = float('inf')
                 min_key = None
                 for key, value in ns_cache.items():
@@ -204,7 +204,7 @@ class LFUACache(BaseCache):
             ns_cache[id_]['count'] += 1
         else:
             if len(ns_cache) >= self.capacity:
-                # 找到访问频率最低的键
+                # Find the key with the lowest access frequency
                 min_count = float('inf')
                 min_key = None
                 for key, value in ns_cache.items():
@@ -234,20 +234,20 @@ class LFUACache(BaseCache):
 
 
 
-# 全局缓存实例池（策略名 -> 实例）
+# Global cache instance pool (policy name -> instance)
 _cache_singletons = {}
 
 def create_cache(alg: CACHEALG, capacity: int=None, singleton: bool=True, throw_err=True):
     if singleton and alg in _cache_singletons: return _cache_singletons[alg]
-    # 选择策略构造类
+    # Select a policy constructor class
     if alg == CACHEALG.FIFO:
-        print(">> 创建了 FIFO Cache <<")
+        print(">> FIFO Cache created <<")
         instance = FIFOCache(capacity)
     elif alg == CACHEALG.LRU:
-        print(">> 创建了 LRU Cache <<")
+        print(">> LRU Cache created <<")
         instance = LRUCache(capacity)
     elif alg == CACHEALG.RAND:
-        print(">> 创建了 RAND Cache <<")
+        print(">> RAND Cache created <<")
         instance = RANDCache(capacity)
     else:
         if not throw_err: return None
@@ -271,16 +271,16 @@ def test_fifo_cache():
     cache = FIFOCache(capacity=3)
     ids = ['id1', 'id2', 'id3']
     features = [np.array([1, 2]), np.array([3, 4]), np.array([5, 6])]
-    # 批量 put
+    # Batch put
     cache.put_batch(ids, features)
-    # 批量 get
-    res = cache.get_batch(['id2', 'id4'])  # id4 不存在
+    # Batch get
+    res = cache.get_batch(['id2', 'id4'])  # id4 does not exist
     print("Get batch:", res)
-    # 查看缺失项
+    # View missing items
     miss = cache.missing(['id2', 'id3', 'id5'])
     print("Missing:", miss)
-    # FIFO 测试
-    cache.put('id4', np.array([7, 8]))  # 淘汰 id1
+    # FIFO Testing
+    cache.put('id4', np.array([7, 8]))  # Eliminate id1
     print("After FIFO:")
     print(list(cache.items()))
     print("Stats:", cache.stats())
@@ -291,12 +291,12 @@ def test_lru_cache():
     ids = ['id1', 'id2', 'id3']
     features = [np.array([1]), np.array([2]), np.array([3])]
     cache.put_batch(ids, features)
-    # 模拟访问
-    print(cache.get('id1'))  # 会更新 id1 为最近使用
-    # 添加新项，会淘汰最久未使用的（id2）
+    # Simulated access
+    print(cache.get('id1'))  # Will update id1 for the most recent use
+    # Adding new items will eliminate the longest unused (id2)
     cache.put('id4', np.array([4]))
     print("Cache keys after LRU eviction:")
-    # 查看缓存状态和统计信息
+    # View cache status and statistics
     print("Cache keys:", list(cache.cache.keys()))
     print("Stats:", cache.stats())
 # ------------test----------------- #
