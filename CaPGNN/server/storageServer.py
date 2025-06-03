@@ -1,8 +1,6 @@
 import multiprocessing
 import os
-
 import gpu
-
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import pickle
 import asyncio
@@ -81,7 +79,7 @@ def isin_cupy(a, b, ret='numpy', stream=None):
 
     a = convert_CNP(a, 'cupy')
     b = convert_CNP(b, 'cupy')
-    # 检查空数组情况
+    # Check the empty array
     if a.size == 0 or b.size == 0: return np.zeros(a.shape, dtype=np.bool_)
     return convert_CNP(cp.isin(a, b, assume_unique=True), ret)
 
@@ -105,50 +103,47 @@ def unique_numba(arr):
 
 @njit
 def find_valid_indices(feature_ids, all_keys_np, all_indices_np):
-    # 初始化匹配掩码
+    # Initialize the matching mask
     matching_mask = np.zeros(feature_ids.size, dtype=np.bool_)
-    # 创建一个用于快速查找的集合
+    # Create a collection for quick searches
     all_keys_set = set(all_keys_np)
-    # 查找 feature_ids 中的每个元素是否存在于 all_keys_np 中
+    # Find out if each element in feature_ids exists in all_keys_np
     for i in range(feature_ids.size):
         if feature_ids[i] in all_keys_set:
             matching_mask[i] = True
-    # 获取与 all_keys_np 匹配的 feature_ids
+    # Get feature_ids matching all_keys_np
     matched_feature_ids = feature_ids[matching_mask]
-    # 初始化结果掩码
+    # Initialization result mask
     keys_mask = np.zeros(all_keys_np.size, dtype=np.bool_)
-    # 创建一个用于快速查找的集合
+    # Create a collection for quick searches
     matched_feature_ids_set = set(matched_feature_ids)
-    # 查找 all_keys_np 中的每个元素是否存在于匹配的 feature_ids 中
+    # Find out if each element in all_keys_np exists in matching feature_ids
     for i in range(all_keys_np.size):
         if all_keys_np[i] in matched_feature_ids_set:
             keys_mask[i] = True
-    # 使用 keys_mask 过滤 all_indices_np
+    # Use keys_mask to filter all_indices_np
     valid_indices_np = all_indices_np[keys_mask]
     return valid_indices_np
 
 def convert_CNP(input_array, target_type, device=None):
     """
-    将输入的数据类型转换为目标类型，支持 CuPy、NumPy 和 PyTorch Tensor 之间的转换。
-    对于 CuPy 到 PyTorch 的转换，使用 DLPack 进行高效转换。
-
-    参数:
-    input_array: 输入的数组，可以是 CuPy 数组、NumPy 数组或 PyTorch Tensor
-    target_type: 目标类型，可以是 'cupy', 'numpy', 或 'torch'
-
-    返回:
-    转换后的目标类型的数据
+    Converts the input data type to the target type, supporting conversion between CuPy, NumPy, and PyTorch Tensor. For CuPy to PyTorch conversion, use DLPack for efficient conversion. 
+    parameter:
+        input_array: The input array can be a CuPy array, a NumPy array, or PyTorch Tensor 
+        target_type: The target type can be 'cupy', 'numpy', or 'torch' 
+    Return:
+        Converted target type data
     """
     if target_type == None: return input_array
     if isinstance(input_array, cp.ndarray):
-        # 从 CuPy 转换
+        # Convert from CuPy
         if target_type == 'numpy':
-            return input_array.get()  # 或 cp.asnumpy(input_array)
+            return input_array.get()  # or cp.asnumpy(input_array)
         elif target_type == 'torch':
-            # CuPy 到 PyTorch 使用 DLPack
+            # CuPy to PyTorch Using DLPack
             res = torch.utils.dlpack.from_dlpack(input_array.toDlpack())
             # return torch.from_numpy(input_array.get())
-            # 如果目标设备是 None，则返回默认设备上的 tensor；否则转移到指定的设备
+            # If the target device is None, the tensor on the default device is returned; otherwise, it will be transferred to the specified device
             if device: res = res.to(device)
             return res
         elif target_type == 'cupy':
@@ -156,7 +151,7 @@ def convert_CNP(input_array, target_type, device=None):
         else:
             raise ValueError(f"Unsupported target type '{target_type}' for CuPy array.")
     elif isinstance(input_array, np.ndarray):
-        # 从 NumPy 转换
+        # Convert from NumPy
         if target_type == 'cupy':
             if device:
                 with cp.cuda.Device(device[-1]):
@@ -166,7 +161,7 @@ def convert_CNP(input_array, target_type, device=None):
             return res
         elif target_type == 'torch':
             res = torch.from_numpy(input_array)
-            # 如果目标设备是 None，则返回默认设备上的 tensor；否则转移到指定的设备
+            # If the target device is None, the tensor on the default device is returned; otherwise, it will be transferred to the specified device
             if device: res = res.to(device)
             return res
         elif target_type == 'numpy':
@@ -174,9 +169,9 @@ def convert_CNP(input_array, target_type, device=None):
         else:
             raise ValueError(f"Unsupported target type '{target_type}' for NumPy array.")
     elif isinstance(input_array, torch.Tensor):
-        # 从 PyTorch Tensor 转换
+        # Convert from PyTorch Tensor
         if target_type == 'cupy':
-            # 确保 tensor 在 GPU 上
+            # Make sure the tensor is on the GPU
             if input_array.device.type != 'cuda': raise ValueError("PyTorch tensor must be on GPU.")
             if device: input_array = input_array.to(device)
             return cp.from_dlpack(torch.utils.dlpack.to_dlpack(input_array))
@@ -192,11 +187,9 @@ def convert_CNP(input_array, target_type, device=None):
         raise TypeError("Input must be a CuPy array, NumPy array, or PyTorch Tensor.")
 
 
-# 替换节点时候是否使用基于节点重要性的优先级排序
+# Whether to use priority sort based on node importance when replacing nodes
 use_weight_update = True
-# 还有op_util.py的pick_cache2、comm.py的fp_msg_exchange
-use_real_cache = True
-# 节点重叠率使用降序排序，即优先选择重叠率高的
+# The overlap rate of nodes is sorted in descending order, which is preferred to select those with high overlap rate.
 use_descending = True
 
 
@@ -382,52 +375,41 @@ class CacheServer:
         self.barrier.wait()
 
     def chunkify(self, lst, n):
-        """将 NumPy 数组 lst 均匀分割为 n 个子数组"""
+        """Evenly split NumPy array lst into n subarrays"""
         avg = len(lst) // n
         remainder = len(lst) % n
         indices = np.arange(n) < remainder
         splits = np.cumsum(indices + avg)
         return np.split(lst, splits[:-1])
 
-    # 根据id查找是否在cache中，无需返回feature
+    # Find whether it is in cache by id, no need to return feature
     def is_feature_in_local_cache(self, name, feature_ids):
         if self.cache_alg != CACHEALG.JACA:
             return self.cache_l.is_keys_exist(feature_ids.numpy(), namespace=name)
         return isin_cupy(feature_ids.numpy(), self.l_feature_ids_map_keys[name], stream=self.cupy_stream)
 
-    # 根据id查找是否在cache中，无需返回feature
+    # Find whether it is in cache by id, no need to return feature
     def is_feature_in_cache(self, name, feature_ids, features=None, target_rank=None):
         local_keys_np = self.l_feature_ids_map_keys[name]
         global_keys_np, _ = self.get_g_feature_ids_map_kv(name)
         feature_ids_np = feature_ids.numpy()
 
-        if use_real_cache:
-            global_found_mask = []
-            if self.cache_alg == CACHEALG.JACA:
-                local_found_mask = isin_cupy(feature_ids_np, local_keys_np, stream=self.cupy_stream)
-                # 如果局部缓存有缺失，再检查全局缓存
-                if np.count_nonzero(~local_found_mask):
-                    global_ids_np = feature_ids_np[~local_found_mask]
-                    # feature really in cpu
-                    global_found_mask = isin_cupy(global_ids_np, global_keys_np, stream=self.cupy_stream)
-            else:
-                local_found_mask = self.cache_l.is_keys_exist(feature_ids_np, namespace=name)
-                if np.count_nonzero(~local_found_mask):
-                    global_ids_np = feature_ids_np[~local_found_mask]
-                    global_found_mask = self.cache_g.is_keys_exist(global_ids_np, namespace=name)
-            # prefetch, cpu to gpu
-            # if np.count_nonzero(global_found_mask): self.enqueue_cache_task('prefetch', name, global_ids_np[global_found_mask], features=None, device=torch.device('cuda', target_rank))
-            local_found_mask[~local_found_mask] = global_found_mask
+        global_found_mask = []
+        if self.cache_alg == CACHEALG.JACA:
+            local_found_mask = isin_cupy(feature_ids_np, local_keys_np, stream=self.cupy_stream)
+            # If the local cache is missing, check the global cache again
+            if np.count_nonzero(~local_found_mask):
+                global_ids_np = feature_ids_np[~local_found_mask]
+                # feature really in cpu
+                global_found_mask = isin_cupy(global_ids_np, global_keys_np, stream=self.cupy_stream)
         else:
-            # -------------------------------- #
-            # 检查全局缓存
-            global_ids_np = feature_ids_np
-            # feature really in cpu
-            global_found_mask = isin_cupy(global_ids_np, global_keys_np, stream=self.cupy_stream)
-            # prefetch, cpu to gpu
-            # if np.count_nonzero(global_found_mask): self.enqueue_cache_task('prefetch', name, global_ids_np[global_found_mask], features=None, device=torch.device('cuda', target_rank))
-            local_found_mask = global_found_mask
-            # -------------------------------- #
+            local_found_mask = self.cache_l.is_keys_exist(feature_ids_np, namespace=name)
+            if np.count_nonzero(~local_found_mask):
+                global_ids_np = feature_ids_np[~local_found_mask]
+                global_found_mask = self.cache_g.is_keys_exist(global_ids_np, namespace=name)
+        # prefetch, cpu to gpu
+        # if np.count_nonzero(global_found_mask): self.enqueue_cache_task('prefetch', name, global_ids_np[global_found_mask], features=None, device=torch.device('cuda', target_rank))
+        local_found_mask[~local_found_mask] = global_found_mask
 
         # add to global cache
         if np.count_nonzero(~local_found_mask):
@@ -445,12 +427,12 @@ class CacheServer:
         with torch.cuda.stream(self.cache_streams[0]):
             result = torch.empty((feature_ids_np.size, self.dims[int(name[-1])]), device=device, dtype=self.feat_type)
 
-        # 找到哪些 feature_ids 存在于 local_keys 中
+        # Find which feature_ids exist in local_keys
         found_local_mask_np = isin_cupy(feature_ids_np, local_keys_np, stream=self.cupy_stream)
         found_local_indices_np = np.where(found_local_mask_np)[0]
         missing_feature_ids_np = feature_ids_np[~found_local_mask_np]
 
-        # 提取局部缓存中的特征
+        # Extract features in local cache
         if found_local_indices_np.size > 0:
             valid_local_indices = local_ids_np[isin_cupy(local_keys_np, feature_ids_np[found_local_indices_np], stream=self.cupy_stream)]
             with torch.cuda.stream(self.cache_streams[1]):
@@ -458,7 +440,7 @@ class CacheServer:
                 # gpu to gpu
                 result[found_local_indices_np].copy_(local_features, non_blocking=True)
 
-        # 如果局部缓存未找到特征，从全局缓存中获取
+        # If the local cache does not find the feature, get it from the global cache
         if missing_feature_ids_np.size > 0:
             # engine.ctx.timer.start(f'cccc')
             valid_global_ids, valid_global_indices = self.get_halo_feature_from_global(name, missing_feature_ids_np)
@@ -487,11 +469,11 @@ class CacheServer:
         local_keys_np = self.l_feature_ids_map_keys[name]
         local_ids_np = self.l_feature_ids_map_values[name]
         feature_ids_np = np.unique(feature_ids.cpu().numpy())
-        # 找到哪些 feature_ids 存在于 local_keys 中
+        # Find which feature_ids exist in local_keys
         if self.cache_alg == CACHEALG.JACA:
             found_local_mask_np = isin_cupy(feature_ids_np, local_keys_np, stream=self.cupy_stream)
             found_local_indices_np = np.where(found_local_mask_np)[0]
-            # 提取局部缓存中的特征
+            # Extract features in local cache
             if found_local_indices_np.size == 0: return None, None
             valid_local_indices = local_ids_np[isin_cupy(local_keys_np, feature_ids_np[found_local_indices_np], stream=self.cupy_stream)]
             return l_feature_pool[valid_local_indices], found_local_indices_np
@@ -505,13 +487,13 @@ class CacheServer:
         elif isinstance(feature_ids, np.ndarray):
             if feature_ids.size == 0: return None, None
         if self.cache_alg == CACHEALG.JACA:
-            # 获取特征池和对应的索引字典
+            # Get feature pool and corresponding index dictionary
             all_keys_np, all_indices_np = self.get_g_feature_ids_map_kv(name)
-            # 使用 numpy 的 isin 来找到哪些 feature_ids 存在于 all_keys 中
+            # Use numpy's isin to find which feature_ids exist in all_keys
             matching_mask = isin_cupy(feature_ids, all_keys_np, stream=self.cupy_stream)
             match_feature_ids = feature_ids[matching_mask]
             found_global_indices_np = np.where(matching_mask)[0]
-            # 查找这些匹配的 feature_ids 在 all_keys 中的位置
+            # Find the location of these matching feature_ids in all_keys
             keys_mask = isin_cupy(all_keys_np, match_feature_ids, stream=self.cupy_stream)
             valid_indices_np = all_indices_np[keys_mask]
             if valid_indices_np.size == 0: return None, None
@@ -528,11 +510,11 @@ class CacheServer:
 
     @DeprecationWarning
     def get_halo_feature_from_global(self, name, feature_ids, device='cpu'):
-        # 获取特征池和对应的索引字典
+        # Get feature pool and corresponding index dictionary
         all_keys_np, all_indices_np = self.get_g_feature_ids_map_kv(name)
-        # 使用 numpy 的 isin 来找到哪些 feature_ids 存在于 all_keys 中
+        # Use numpy's isin to find which feature_ids exist in all_keys
         matching_mask = isin_cupy(feature_ids, all_keys_np, stream=self.cupy_stream)
-        # 查找这些匹配的 feature_ids 在 all_keys 中的位置
+        # Find the location of these matching feature_ids in all_keys
         keys_mask = isin_cupy(all_keys_np, feature_ids[matching_mask], stream=self.cupy_stream)
         valid_indices_np = all_indices_np[keys_mask]
         # valid_indices_np = find_valid_indices(feature_ids, all_keys_np, all_indices_np)
@@ -540,7 +522,7 @@ class CacheServer:
         return feature_ids[matching_mask], torch.from_numpy(valid_indices_np).to(device)
 
     def add_halo_features_to_local(self, name, node_features):
-        # 将字典的键转换为 numpy 数组
+        # Convert dictionary keys to numpy arrays
         add_keys_np = np.fromiter(node_features.keys(), dtype=np.int32)
         if self.cache_alg != CACHEALG.JACA:
             feats = torch.stack(list(node_features.values()), dim=0)
@@ -548,30 +530,30 @@ class CacheServer:
             return
         ## else:
         if name not in self.l_feature_pool: raise ValueError(f"Local feature pool {name} does not exist")
-        # 获取局部特征池和对应的索引字典
+        # Get local feature pool and corresponding index dictionary
         feature_pool = self.l_feature_pool[name]
         l_feature_ids_map = self.l_feature_ids_map[name]
         existing_keys_np = self.l_feature_ids_map_keys[name]
-        # 查找哪些待添加的键已经存在
+        # Find which keys to be added already exist
         existing_mask_np = isin_cupy(add_keys_np, existing_keys_np)
 
 
         existing_mask = torch.from_numpy(existing_mask_np)
-        # 筛选出不在 existing_keys 中的新键
+        # Filter out new keys that are not in existing_keys
         add_keys_np = add_keys_np[~existing_mask_np]
-        # 如果没有需要添加的新特征
+        # If there are no new features to add
         if add_keys_np.size == 0: return
 
-        # 筛选需要添加的特征
+        # Filter the features that need to be added
         features_to_add = torch.stack(list(node_features.values()), dim=0)[~existing_mask]
 
-        # 查找空闲位置的起始位置
+        # Find the starting position of the free position
         empty_rows_mask = torch.all(feature_pool == 0, dim=1)
         empty_rows_indices = torch.nonzero(empty_rows_mask).view(-1)
         if empty_rows_indices.size(0) == 0: return
         start_index = empty_rows_indices[0].item()
 
-        # 如果剩余空间不够，只缓存一部分
+        # If the remaining space is insufficient, only a part of it is cached
         available_space = feature_pool.size(0) - start_index
         if available_space < len(features_to_add):
             debug(f"Local feature pool {name} does not have enough space to add all features, "
@@ -579,11 +561,11 @@ class CacheServer:
             features_to_add = features_to_add[:available_space]
             add_keys_np = add_keys_np[:available_space]
 
-        # 使用切片进行批量传输
+        # Batch transfer using slices
         end_index = start_index + len(features_to_add)
         feature_pool[start_index:end_index].copy_(features_to_add.cpu(), non_blocking=True)
 
-        # 更新索引，确保每个name有自己的索引
+        # Update the index to make sure each name has its own index
         l_feature_ids_map.update(zip(add_keys_np, np.arange(start_index, end_index)))
         self.l_feature_ids_map_keys[name] = np.fromiter(l_feature_ids_map.keys(), dtype=np.int32) 
         self.l_feature_ids_map_values[name] = np.fromiter(l_feature_ids_map.values(), dtype=np.int32)
@@ -610,14 +592,14 @@ class CacheServer:
         update_keys_np = add_keys_np[existing_indices]
         add_keys_np = add_keys_np[~existing_mask_np]
 
-        # 更新已有的 feature_idsures
+        # Update existing feature_idsures
         if update_keys_np.size > 0:
             existing_keys_mask = isin_cupy(existing_keys_np, update_keys_np)
             existing_keys_indices = np.nonzero(existing_keys_mask)[0]
             l_feature_pool[existing_keys_indices].copy_(features[existing_indices], non_blocking=True)
             feature_len += existing_indices.size
 
-        # 根据权重排序，插入到可用空间中
+        # Sort by weight, insert into available space
         # with TimerRecord(prefix='aaa'):
         if use_weight_update:
             node_weight_keys = self.global_id_counter[0].numpy()
@@ -626,12 +608,12 @@ class CacheServer:
             add_keys_weight_keys_indices = np.nonzero(add_keys_weight_keys_mask)[0]
             add_keys_weight_values = node_weight_values[add_keys_weight_keys_indices]
             sorted_add_keys_weight_values_indices = np.argsort(add_keys_weight_values)
-            # 降序排序
+            # Sort descending
             if use_descending: sorted_add_keys_weight_values_indices = sorted_add_keys_weight_values_indices[::-1]
             add_keys_np = add_keys_np[sorted_add_keys_weight_values_indices]
             # features = features[sorted_add_keys_weight_values_indices]
 
-        # 新增新的 features
+        # Add new features
         if add_keys_np.size > 0:
             features = features[~existing_mask_np]
             if self.cache_alg==CACHEALG.JACA:
@@ -653,27 +635,27 @@ class CacheServer:
         return feature_len
 
     def add_halo_features_to_global(self, name, node_features):
-        # 构建待添加键的 numpy 数组
+        # Build a numpy array of keys to be added
         add_keys_np = np.fromiter(node_features.keys(), dtype=np.int32)
         if self.cache_alg != CACHEALG.JACA:
             feats = torch.stack(list(node_features.values()), dim=0)
             self.cache_g.put_batch(add_keys_np, feats, namespace=name)
             return
         ## else:
-        # 获取特征池和索引
+        # Get feature pools and indexes
         g_feature_pool = self.g_feature_pool[name][0]
         existing_keys_np, _ = self.get_g_feature_ids_map_kv(name)
 
-        # 查找已存在的特征
+        # Find existing features
         existing_mask_np = isin_cupy(add_keys_np, existing_keys_np)
         existing_mask = torch.from_numpy(existing_mask_np)
         add_keys_np = add_keys_np[~existing_mask_np]
         if add_keys_np.size == 0: return
-        # 筛选需要添加的特征
+        # Filter the features that need to be added
         features_to_add = torch.stack(list(node_features.values()), dim=0)[~existing_mask]
-        # 查找空闲位置的起始位置
+        # Find the starting position of the free position
         start_index = torch.nonzero(g_feature_pool[:, 0] == 0).view(-1).min().item()
-        # 如果剩余空间不够，只缓存一部分
+        # If the remaining space is insufficient, only a part of it is cached
         available_space = g_feature_pool.size(0) - start_index
         if available_space < len(features_to_add):
             debug(f"Feature pool {name} only caching {available_space} out of {len(features_to_add)} features")
@@ -706,13 +688,13 @@ class CacheServer:
         feature_len = 0
         g_feature_pool = self.g_feature_pool[name][0]
         existing_keys_np, _ = self.get_g_feature_ids_map_kv(name)
-        # 查找已存在和新增的 keys
+        # Find existing and new keys
         existing_mask_np = isin_cupy(add_keys_np, existing_keys_np)
         existing_indices = np.nonzero(existing_mask_np)[0]
         update_keys_np = add_keys_np[existing_indices]
         add_keys_np = add_keys_np[~existing_mask_np]
 
-        # 更新已有的 features
+        # Update existing features
         if update_keys_np.size > 0:
             existing_keys_mask = isin_cupy(existing_keys_np, update_keys_np)
             existing_keys_indices = np.nonzero(existing_keys_mask)[0]
@@ -720,7 +702,7 @@ class CacheServer:
             self.g_feature_pool[name][0][existing_keys_indices].copy_(self.g_feature_pool[name][1][:existing_keys_indices.size], non_blocking=True)
             feature_len += existing_indices.size
 
-        # 新增新的 features
+        # Add new features
         if add_keys_np.size > 0:
             features = features[~existing_mask_np]
             empty_rows_mask = ~torch.any(g_feature_pool != 0, dim=1)
@@ -729,7 +711,7 @@ class CacheServer:
             start_index = empty_rows_indices[0].item()
             available_space = g_feature_pool.size(0) - start_index
     
-            # 根据权重排序，插入到可用空间中
+            # Sort by weight, insert into available space
             if use_weight_update:
                 node_weight_keys = self.global_id_counter[0].numpy()
                 node_weight_values = self.global_id_counter[1].numpy()
@@ -737,12 +719,12 @@ class CacheServer:
                 add_keys_weight_keys_indices = np.nonzero(add_keys_weight_keys_mask)[0]
                 add_keys_weight_values = node_weight_values[add_keys_weight_keys_indices]
                 sorted_add_keys_weight_values_indices = np.argsort(add_keys_weight_values)
-                # 降序排序
+                # Sort descending
                 if use_descending: sorted_add_keys_weight_values_indices = sorted_add_keys_weight_values_indices[::-1]
                 add_keys_np = add_keys_np[sorted_add_keys_weight_values_indices]
 
             if available_space < features.size(0):
-                # 缓存替换：根据节点权重，用权重高的替换现有的得分低的。
+                # Cache replacement: Replace existing ones with high weights with low scores based on the node weights.
                 debug(f"Feature pool {name} only caching {available_space} out of {features.size(0)} features")
                 features = features[:available_space]
                 add_keys_np = add_keys_np[:available_space]
@@ -769,7 +751,7 @@ class CacheServer:
         #
         #     available_space = g_feature_pool.size(0) - start_index
         #     if available_space < features.size(0):
-        #         # 缓存替换：根据节点权重，用权重高的替换现有的得分低的。
+        #         # Cache replacement: Replace existing ones with high weights with low scores based on the node weights.
         #         debug(f"Feature pool {name} only caching {available_space} out of {features.size(0)} features")
         #         features = features[:available_space]
         #         add_keys_np = add_keys_np[:available_space]
@@ -792,7 +774,7 @@ class StorageServer:
     def __init__(self, manager, gpus_num, gsize, dims, cache_alg=CACHEALG.JACA):
         self.feat_type = torch.float32
         self.rank = None
-        # 创建一个Barrier以确保所有进程同步
+        # Create a Barrier to ensure all processes are synchronized
         self.cache_barrier = manager.Barrier(gpus_num)
         self.lsize = None
         self.gsize = gsize
@@ -800,7 +782,7 @@ class StorageServer:
         self.cache_alg = cache_alg
         self.cache_comm_queue = [manager.Queue() for _ in range(gpus_num)]
         
-        # 初始化全局特征池
+        # Initialize the global feature pool
         self.g_feature_pool = {
             "forward0": [torch.zeros(size=(gsize, dims[0]), dtype=self.feat_type).share_memory_(), None],
             "forward1": [torch.zeros(size=(gsize, dims[1]), dtype=self.feat_type).share_memory_(), None],
@@ -808,7 +790,7 @@ class StorageServer:
             "backward2": [torch.zeros(size=(gsize, dims[2]), dtype=self.feat_type).share_memory_(), None],
             "backward1": [torch.zeros(size=(gsize, dims[1]), dtype=self.feat_type).share_memory_(), None],
         }
-        # 节点全局id <=> 全局特征池位置索引
+        # Node global id <=> Global feature pool location index
         self.g_feature_ids_map = {
             "forward0": manager.dict(),
             "forward1": manager.dict(),
@@ -831,7 +813,7 @@ class StorageServer:
         self.l_feature_ids_map = None
         self.g_feature_ids_map_lock = manager.RLock()
         self.g_feature_ids_map_write_lock = manager.Lock()
-        # 全局ID的计数器
+        # Counter of global ID
         self.global_id_counter = manager.dict()
         self.g_mgr_queue = manager.Queue()
         # self.g_mgr_queue = multiprocessing.Queue()
@@ -931,8 +913,8 @@ class StorageServer:
                     if global_id.item() in halo_node_features.keys(): continue
                     temp[global_id.item()] = feature
                 halo_node_features.update(temp)
-                logger.info(f"[{part_id}-{i}]本次添加{len(temp.keys())}/{len(halo_global_ids)}个halo节点进来")
-        logger.info(f"最终有效的节点数：{len(halo_node_features.keys())}")
+                logger.info(f"[{part_id}-{i}]This time, {len(temp.keys())}/{len(halo_global_ids)} halo nodes are added to enter")
+        logger.info(f"The final number of valid nodes：{len(halo_node_features.keys())}")
         return halo_node_features
 
     def get_halo_count(self, part_size, dataset, gpus_list, part_dir='data/part_data', our_partition=False):
@@ -957,7 +939,7 @@ class StorageServer:
         all_part_nodes_feats = []
         halo_node_features = {}
         model_type = DistGNNType.DistGCN
-        # 加载pkl文件  /home/sxf/Desktop/gnn/dist_gnn_fullbatch
+        # Loading pkl file /home/sxf/Desktop/gnn/dist_gnn_fullbatch
         partition_file = f'{part_dir}/{dataset}/{part_size}part/{dataset}_processed_partitions_{our_partition}_{sorted(gpus_list)}.pkl'
         with open(partition_file, 'rb') as f: assig_graphs_gpus = pickle.load(f)
 
@@ -984,7 +966,7 @@ class StorageServer:
 
                 # method 2:
                 indices = torch.nonzero(torch.isin(torch.tensor(self.global_id_counter[0]), halo_global_ids)).view(-1)
-                _, ori_idxs = torch.sort(torch.tensor(self.global_id_counter[1])[indices], descending=use_descending)  # 降序排序
+                _, ori_idxs = torch.sort(torch.tensor(self.global_id_counter[1])[indices], descending=use_descending)  # Sort descending
 
                 # method 3:
                 # agg_scores = _get_agg_scores(g, halo_local_masks, nodes_feats, model_type)
@@ -996,7 +978,7 @@ class StorageServer:
 
                 # select top k
                 top_k_ids = halo_global_ids[ori_idxs[:k] if k > 0 else ori_idxs]
-                # 从分区i中批量提取halo节点的特征
+                # Batch extraction of halo node features from partition i
                 remote_g, part_i_nodes_feats = all_part_nodes_feats[i]
                 halo_remote_mask = torch.isin(part_i_nodes_feats[dgl.NID], top_k_ids)
                 halo_remote_idx = torch.nonzero(halo_remote_mask).view(-1)
@@ -1007,20 +989,20 @@ class StorageServer:
                     temp[global_id.item()] = feature
                 halo_node_features.update(temp)
                 max_subg_size = max(max_subg_size, len(halo_global_ids))
-                logger.info(f"[{part_id}-{i}]本次添加{len(temp.keys())}/{len(halo_global_ids)}个halo节点进来")
-        logger.info(f"最终有效的节点数：{len(halo_node_features.keys())}")
+                logger.info(f"[{part_id}-{i}]This time, {len(temp.keys())}/{len(halo_global_ids)} halo nodes are added to enter")
+        logger.info(f"The final number of valid nodes: {len(halo_node_features.keys())}")
         return halo_node_features, max_subg_size
 
     @staticmethod
     def cal_capacity(part_size, dataset, gpus_list, f_dims, part_dir='data/part_data', k=-1, our_partition=False):
-        # reserved_mem是手动设定的值，用于排除训练过程中需要占用的内存，比如梯度等。比如10MB。
+        # reserved_mem is a manually set value, used to exclude memory that needs to be occupied during training, such as gradients, etc. For example, 10MB.
         reserved_mem_gpu = 0  # 10 * 1024
         reserved_mem_cpu = 0  # 10 * 1024
-        # cpu_mem是手动设定的值，表示CPU的可用内存。比如256GB。
+        # cpu_mem is a manually set value, indicating the available memory of the CPU. For example, 256GB.
         cpu_mem = 786 * 1024 * 1024
-        # 每个GPU实际的缓存容量
+        # Actual cache capacity per GPU
         gpus_capacity = {}
-        # CPU上最大的缓存容量
+        # Maximum cache capacity on the CPU
         max_capacity_CPU = 0
         all_part_nodes_feats = []
         partition_file = f'{part_dir}/{dataset}/{part_size}part/{dataset}_processed_partitions_{our_partition}_{sorted(gpus_list)}.pkl'
@@ -1040,7 +1022,7 @@ class StorageServer:
             halo_node_ids = set()
             for i in range(part_size):
                 if i == part_id: continue
-                # 这里是获取当前分区part_id中，有哪些halo节点是属于分区i的。表示为halo_global_ids
+                # Here is to get which halo nodes belong to partition i in the current partition part_id. Expressed as halo_global_ids
                 halo_local_masks = (nodes_feats['part_id'] == i)
                 halo_local_idx = torch.nonzero(halo_local_masks).view(-1)
                 if halo_local_idx.numel() == 0: continue
@@ -1048,10 +1030,10 @@ class StorageServer:
                 for global_id in halo_global_ids:
                     if global_id.item() in halo_node_ids: continue
                     halo_node_ids.add(global_id.item())
-            # 当前分区part_id中，最大需要的缓存节点数
+            # The maximum required cache nodes in the current partition part_id
             max_capacity = len(halo_node_ids)
             gpu_id = gpu_ids[part_id]
-            # 根据最大缓存节点数、gpu的可用内存、顶点维度等信息，来获取当前GPU实际可以承受的缓存容量
+            # Based on the maximum number of cache nodes, the available memory of GPU, the vertex dimensions and other information, we can obtain the cache capacity that the current GPU can actually bear.
             gpu_memory = gpu.gpu_capability[gpu_id][0]  # MB
             temp = (gpu_memory - reserved_mem_gpu) * 1024 * 1024  / sum(f_dims) / 4
             gpus_capacity[part_id] = min(temp, max_capacity)
@@ -1060,7 +1042,7 @@ class StorageServer:
         return cpu_capacity, gpus_capacity
 
 def warmup(device):
-    # 定义一个网络
+    # Define a network
     model = nn.Sequential(
         nn.Linear(8, 128),
         nn.ReLU(),
@@ -1083,7 +1065,7 @@ def test_worker(rank, server):
     device_name = torch.cuda.get_device_name(rank)
     print(f"GPU {rank}: {device_name}")
     warmup(device)
-    # 初始化局部缓存
+    # Initialize local cache
     server.init_local_sources(device)
 
     if rank == 0:
