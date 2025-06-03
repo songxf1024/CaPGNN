@@ -22,7 +22,7 @@ def process_obg_dataset(dataset: str, raw_dir: str):
     # elif dataset in ['ogbg-molhiv', ]:
     #     data = DglGraphPropPredDataset(name=dataset, root=raw_dir)
     else:
-        print('该数据集暂不支持')
+        print('This dataset is not yet supported')
         return None
     graph, labels = data[0]
     labels = labels[:, 0]
@@ -43,7 +43,7 @@ def process_obg_dataset(dataset: str, raw_dir: str):
 
 def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'dataset', part_dir: str = 'part_data', num_hops=1, part_method='metis'):
     '''
-    对数据集进行分区并存储
+    Partition and store the dataset
     we set HALO hop as 1 to save cross-device neighboring nodes' indices for constructing send/recv idx.
     '''
     dataset_map = {
@@ -69,20 +69,20 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
     # if os.path.exists(partition_dir):
     #     return
     if 'ogb' in dataset:
-        # OGB的数据集需要处理一下
+        # OGB dataset needs to be processed
         graph = process_obg_dataset(dataset, raw_dir)
     elif dataset == 'yelp':
-        # PyG的数据集更需要处理一下
+        # PyG dataset needs to be processed
         # data = torch_geometric.datasets.Yelp(root=os.path.join(raw_dir, dataset))
         data = dataset_map[dataset](raw_dir=raw_dir)
         graph = load_yelp(raw_dir=raw_dir)
     elif dataset_map.get(dataset):
-        # DGL的数据集都可以直接用
+        # All DGL datasets can be used directly
         data = dataset_map[dataset](raw_dir=raw_dir)
         graph = data[0]
-        # 如果没有提供mask，就需要手动随机生成
+        # If no mask is provided, it is necessary to generate it manually randomly
         if graph.ndata.get('train_mask') is None:
-            print('>> 这里手动生成了mask，可能会有问题，请注意!')
+            print('>> The mask is generated manually here, there may be problems, please note!')
             n = graph.number_of_nodes()
             n_train = int(n * 0.7)
             n_val = int(n * 0.2)
@@ -102,16 +102,16 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
             # num_nodes = graph.number_of_nodes()
             # train_size = int(num_nodes * 0.7)
             # val_size = int(num_nodes * 0.2)
-            # # 随机打乱节点索引
+            # # Randomly disrupt node index
             # perm = torch.randperm(num_nodes)
-            # # 生成掩码
+            # # Generate mask
             # train_mask = torch.zeros(num_nodes, dtype=torch.bool)
             # val_mask = torch.zeros(num_nodes, dtype=torch.bool)
             # test_mask = torch.zeros(num_nodes, dtype=torch.bool)
             # train_mask[perm[:train_size]] = True
             # val_mask[perm[train_size:train_size + val_size]] = True
             # test_mask[perm[train_size + val_size:]] = True
-            # # 将掩码添加到图的节点数据中
+            # # Add mask to the node data of the graph
             # graph.ndata['train_mask'] = train_mask
             # graph.ndata['val_mask'] = val_mask
             # graph.ndata['test_mask'] = test_mask
