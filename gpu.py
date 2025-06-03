@@ -67,11 +67,12 @@ def cal_gpus_capability(all_gpus_list):
     return gpu_capability
 
 
-# GPU的计算能力。由spmm和mm体现
+# GPU computing power. Embodied by spmm and mm
 def get_gpu_capability(gpus_list, alpha=0.5, reverse=True):
-    # 计算指标 spmm/max(spmm) + mm/max(mm) 并存储在字典中
+    # Calculate the spmm/max(spmm) + mm/max(mm) and store it in the dict
     indicators = {gpu_id: gpu_capability[gpu_id][1]*alpha+gpu_capability[gpu_id][1]*(1-alpha) for gpu_id in gpus_list}
-    # 按指标值降序排序，并获取对应的GPU设备key。值越大，计算成本越大，GPU越弱。
+    # Sort by indices value descending order and get the corresponding GPU device key. 
+    # The larger the value, the greater the calculation cost and the weaker the GPU.
     sorted_gpu_ids = sorted(gpus_list, key=lambda x: indicators[x], reverse=reverse)
     return sorted_gpu_ids
 
