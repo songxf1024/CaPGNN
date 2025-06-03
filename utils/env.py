@@ -12,7 +12,7 @@ class DistEnv:
         self.force_single_gpu = force_single_gpu
         assert(rank>=0)
         assert(world_size>0)
-        # world_size就是nprocs
+        # world_size is nprocs
         self.rank, self.world_size = rank, world_size
         self.backend = backend
         self.init_device()
@@ -52,16 +52,17 @@ class DistEnv:
         if not self.force_single_gpu: dist.barrier(self.world_group)
 
     def init_dist_groups(self):
-        # 初始化分布式库所使用的默认进程组。
-        # backend指定使用哪个后端， rank是当前的GPU_ID， world_size是分布式环境中的进程数量， init_method是指定如何初始化分布式环境的URL字符串。
-        # 在使用'env://'时，PyTorch会根据环境变量中设置的信息来初始化分布式训练环境。
+        # Initialize the default process group used by the distributed library.
+        # backend specifies which backend to use, rank is the current GPU_ID, world_size is the number of processes in the distributed environment, 
+        # and init_method is the URL string that specifies how to initialize the distributed environment.
+        # When using 'env://', ​​PyTorch initializes the distributed training environment based on the information set in the environment variable.
         dist.init_process_group(backend=self.backend, rank=self.rank, world_size=self.world_size, init_method='env://')
-        # dist.new_group  是 PyTorch 中用于创建分布式训练中的进程组的方法。
-        # 在分布式训练中，进程组可以是整个集合的一个子集，这些进程共享相同的通信通道。
-        # 在这里， dist.new_group用于创建一些点对点通信的进程组，它们将在后续的代码中使用。
+        # dist.new_group is a method in PyTorch used to create process groups in distributed training.
+        # In distributed training, a process group can be a subset of the entire set, and these processes share the same communication channel.
+        # Here, dist.new_group is used to create some process groups for point-to-point communication, which will be used in subsequent code.
         self.world_group = dist.new_group(list(range(self.world_size)))
         self.p2p_group_dict = {}
-        # 创建一些仅包含特定进程对的新组
+        # Create some new groups that only contain specific process pairs
         for src in range(self.world_size):
             for dst in range(src+1, self.world_size):
                 self.p2p_group_dict[(src, dst)] = dist.new_group([src, dst])
