@@ -108,10 +108,10 @@ def fp_msg_transfer_process(send_messages: Tensor,
     else:
         with engine.ctx.timer.record('merge_msg'):
             remote_messages = torch.zeros(num_remote, msg_dim, dtype=msg_dtype, device=comm.ctx.device)
-            # 将接收到的数据装填到remote_messages
+            # Load the received data into remote_messages
             for pid, idx in recv_idx.items():
                 if remote_messages[idx].dtype != recv_buffer_gpu[0][pid].dtype:
-                    remote_messages[idx] = recv_buffer_gpu[0][pid].half()  # 将目标张量转换为 half 类型
+                    remote_messages[idx] = recv_buffer_gpu[0][pid].half()  # Convert the target tensor to half type
                 else:
                     remote_messages[idx] = recv_buffer_gpu[0][pid]
 
@@ -123,27 +123,27 @@ def fp_msg_transfer_process(send_messages: Tensor,
 def pick_cache(recv_idx, recv_buffer_cpu, recv_buffer_gpu,
                msg_dim, msg_dtype, num_remote, name,
                storage_server) -> Tensor:
-    # 2. 接收时，缓存里有的就直接取；
+    # 2. When receiving, the cache will be fetched directly;
     remote_messages = torch.zeros(num_remote, msg_dim, dtype=msg_dtype, device=comm.ctx.device)
     non_cache_mask_all = torch.ones(remote_messages.size(0), dtype=torch.bool, device=comm.ctx.device)  #
     cached_num_l = 0
     cached_num_g = 0
-    # 提取缓存中的特征
-    # 选出了当前处理分区上的远程节点
+    # Extract features in the cache 
+    # Select the remote node on the current processing partition
     for pid, ids in recv_idx.items():
         sub_remote_messages = remote_messages[ids]
-        # cache_info = recv_buffer_cpu[1][pid]  # 对应的索引
+        # cache_info = recv_buffer_cpu[1][pid] 
         # valid_cache_indices = cache_info[1:cache_info[0]+1]
         # valid_recv_values_num = sub_remote_messages.size(0)-valid_cache_indices.size(0)
-        # recv_non_cache_values = recv_buffer_gpu[0][pid][:valid_recv_values_num]  # 接收到的数据
+        # recv_non_cache_values = recv_buffer_gpu[0][pid][:valid_recv_values_num]
         # all_global_ids = engine.ctx.g_info.node_feats[dgl.NID][engine.ctx.g_info.num_inner + ids]
-        # cache_info = recv_buffer_cpu[1][pid]  # 对应的索引
+        # cache_info = recv_buffer_cpu[1][pid]
         # valid_cache_indices = cache_info[1:cache_info[0]+1]
         # valid_recv_values_num = sub_remote_messages.size(0)-valid_cache_indices.size(0)
         # -------------------------------- #
-        recv_non_cache_values = recv_buffer_gpu[0][pid]  # 接收到的数据
+        recv_non_cache_values = recv_buffer_gpu[0][pid]
         all_global_ids = engine.ctx.g_info.node_feats[dgl.NID][engine.ctx.g_info.num_inner + ids]
-        # 创建一个布尔掩码来表示未命中缓存的位置
+        # Create a Boolean mask to indicate where the missed cache is located
         # non_cache_mask = torch.ones(sub_remote_messages.size(0), dtype=torch.bool, device=sub_remote_messages.device) #
         non_cache_mask = non_cache_mask_all[:sub_remote_messages.size(0)]
         non_cache_mask.fill_(True)
@@ -152,9 +152,9 @@ def pick_cache(recv_idx, recv_buffer_cpu, recv_buffer_gpu,
         cached_global_feature, cached_global_indices = storage_server.cache_server.get_halo_feature_from_global2(name=name, feature_ids=all_global_ids[non_cache_mask], device=comm.ctx.device, add_local=True)
         if cached_global_indices is not None: non_cache_mask[cached_global_indices] = False
         non_cache_num = torch.count_nonzero(non_cache_mask)
-        # 将未缓存的加上 gpu to gpu
+        # Add uncached gpu to gpu
         if non_cache_num>0: sub_remote_messages[non_cache_mask].copy_(recv_non_cache_values[:non_cache_num], non_blocking=True)
-        # 将命中缓存的加上 gpu to gpu
+        # Add the hit cache to gpu
         if cached_global_indices is not None:
             sub_remote_messages[cached_global_indices[:cached_global_feature.shape[0]]].copy_(cached_global_feature, non_blocking=True)
             cached_num_g += len(cached_global_indices)
