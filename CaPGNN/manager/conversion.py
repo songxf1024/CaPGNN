@@ -17,16 +17,16 @@ from ..communicator import Basic_Buffer_Type
 def convert_partition(part_dir: str, dataset: str) -> Tuple[dgl.DGLHeteroGraph, Dict[str, Tensor], GraphPartitionBook, bool]:
     rank, world_size = comm.get_rank(), comm.get_world_size()
     part_config = f'{part_dir}/{dataset}/{world_size}part/{dataset}.json'
-    # gpb: RangePartitionBook, 用于管理和处理图数据在分布式环境中的分区信息。
-    #   RangePartitionBook 的主要功能是提供节点和边的分区信息。具体而言，它管理了以下内容：
-    #      - 节点和边的分区映射：为每个节点和边分配一个分区编号，表示它们属于哪个分区。
-    #      - 分区范围：定义每个分区中的节点和边的范围，即每个分区包含的节点和边的ID范围。
-    #      - 跨分区通信：在分布式训练中，不同分区的计算节点需要交换节点和边的信息。RangePartitionBook 帮助管理这些跨分区的通信。
-    #   RangePartitionBook 提供了一些方法和属性来查询分区信息，例如：
-    #      - partid2nids(part_id)：返回指定分区ID的节点ID范围。
-    #      - partid2eids(part_id)：返回指定分区ID的边ID范围。
-    #      - nid2partid(nid)：返回指定节点ID所在的分区ID。
-    #      - eid2partid(eid)：返回指定边ID所在的分区ID。
+    # gpb: RangePartitionBook, is used to manage and process partition information of graph data in a distributed environment. 
+    # RangePartitionBook's main function is to provide partition information for nodes and edges. Specifically, it manages the following: 
+    # - Partition mapping for nodes and edges: Assign a partition number to each node and edge to indicate which partition they belong to. 
+    # - Partition scope: Define the range of nodes and edges in each partition, that is, the ID range of nodes and edges contained in each partition. 
+    # - Cross-partition communication: In distributed training, compute nodes of different partitions need to exchange information of nodes and edges. 
+    # RangePartitionBook helps manage these cross-partition communications. RangePartitionBook provides some methods and properties to query partition information, such as: 
+    # - partid2nids(part_id): Returns the node ID range of the specified partition ID. 
+    # - partid2eids(part_id): Returns the edge ID range of the specified partition ID. 
+    # - nid2partid(nid): Returns the partition ID where the specified node ID is located. 
+    # - eid2partid(eid): Returns the partition ID where the specified edge ID is located.
     g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
     # set graph degrees for GNNs aggregation
     save_dir = f'graph_degrees/{dataset}'
@@ -43,7 +43,7 @@ def convert_partition(part_dir: str, dataset: str) -> Tuple[dgl.DGLHeteroGraph, 
     node_type = node_type[0]
     # save original degrees for fp and bp
     nodes_feats[dgl.NID] = g.ndata[dgl.NID]
-    # 对于只有一个分区的时候，所有节点都算
+    # When there is only one partition, all nodes are counted
     nodes_feats['part_id'] = g.ndata.get('part_id', torch.zeros_like(degree_ids))
     nodes_feats['inner_node'] = g.ndata['inner_node'].bool()
     nodes_feats['label'] = nodes_feats[node_type + '/label']
@@ -72,9 +72,9 @@ def is_bidirectional(graph):
     return True
 
 def reorder_graph(original_graph: DGLHeteroGraph, nodes_feats: Dict[str, Tensor], send_idx: Basic_Buffer_Type) -> Tuple[DGLHeteroGraph, Dict[str, Tensor], Basic_Buffer_Type, int, int]:
-    # 将图的节点和特征重新排序为内部节点、边缘节点和中心节点。
-    #   marginal nodes: 边缘节点, 在其他设备上具有远程邻居的节点;
-    #   central nodes: 中心节点, 没有远程邻居的节点;
+    # Reorder the nodes and features of the graph into internal nodes, edge nodes, and central nodes. 
+    #     marginal nodes: edge nodes, nodes with remote neighbors on other devices; 
+    #     central nodes: central nodes, nodes without remote neighbors;
 
     # get inner mask and remote nodes
     inner_mask = nodes_feats['inner_node']
@@ -86,7 +86,6 @@ def reorder_graph(original_graph: DGLHeteroGraph, nodes_feats: Dict[str, Tensor]
     # set marginal mask and central mask
     marginal_mask = torch.zeros_like(inner_mask, dtype=torch.bool)
     marginal_mask[marginal_nodes] = True
-    # 内部点中，不是marginal_nodes的都认为是central_nodes; 然后再加上HALO的nodes(?)
     central_mask = torch.concat([~marginal_mask[:num_inner], marginal_mask[num_inner:]])
     num_marginal, num_central = torch.count_nonzero(marginal_mask).item(), torch.count_nonzero(central_mask).item()
     new_graph, nodes_feats, send_idx = _reorder(original_graph, nodes_feats, send_idx, num_inner, num_central, marginal_mask, central_mask)
@@ -99,39 +98,39 @@ def _reorder(input_graph: DGLHeteroGraph, nodes_feats: Dict[str, Tensor], send_i
     #
     # get the new ids
     new_id = torch.zeros(size=(num_inner,), dtype=torch.long)
-    # 对于 c_mask 中的前 num_inner 个元素，将 new_id 对应位置设为从 0 到 num_central-1 的值
+    # For the first num_inner elements in c_mask, set the corresponding position of new_id to the value from 0 to num_central-1
     new_id[c_mask[:num_inner]] = torch.arange(num_central, dtype=torch.long)
-    # 对于 m_mask 中的前 num_inner 个元素，将 new_id 对应位置设为从 num_central 到 num_inner-1 的值
+    # For the first num_inner elements in m_mask, set the corresponding position of new_id to the value from num_central to num_inner-1
     new_id[m_mask[:num_inner]] = torch.arange(num_central, num_inner, dtype=torch.long)
-    # 获取输入图的边（u 和 v）
+    # Get edges (u and v) of the input graph
     u, v = input_graph.edges()
-    # 对于小于 num_inner 的 u 和 v 值，使用 new_id 进行替换
+    # For u and v values ​​smaller than num_inner, use new_id to replace
     u[u < num_inner] = new_id[u[u < num_inner].long()]
     v[v < num_inner] = new_id[v[v < num_inner].long()]
-    # 使用更新后的 u 和 v 创建一个新的图 reordered_graph
+    # Create a new graph using updated u and v
     reordered_graph = dgl.graph((u, v))
-    # 遍历 nodes_feats 中的每个键，将其特征根据 new_id 进行重新排列
+    # Iterate through each key in nodes_feats and rearrange its features according to new_id
     for key in nodes_feats: nodes_feats[key][new_id] = nodes_feats[key].clone()[0:num_inner]
-    # 遍历 send_idx 中的每个键，按照 new_id 对其进行重新排列
+    # Iterate through each key in send_idx and rearrange it by new_id
     for key in send_idx: send_idx[key] = new_id[send_idx[key]]
     return reordered_graph, nodes_feats, send_idx
 
 def convert_send_idx(original_send_idx: Basic_Buffer_Type) -> Tuple[Dict[int, Tuple[int, int]], Tensor]:
     '''
-    将 send_idx 的原始布局转换为offset fashion。
+    Convert the original layout of send_idx to offset fashion.
     
     `ATTENTION`: this function should be called after graph reordering.
     '''
     offset = 0
     converted_send_idx: Dict[int, Tuple[int, int]] = {}
     total_idx = []
-    # 计算发往其他每个分区的节点的起止ID范围
+    # Calculate the start and end ID range of nodes sent to each other partition
     for k, v in original_send_idx.items():
         converted_send_idx[k] = (offset, offset + len(v))
         offset += len(v)
         total_idx.append(v)
     total_idx = torch.cat(total_idx) if len(total_idx) else total_idx
-    # converted_send_idx只记录起止范围, total_idx记录实际的ID
+    # converted_send_idx only records the start and end range, total_idx records the actual ID
     return converted_send_idx, total_idx
 
 '''
