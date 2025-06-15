@@ -216,10 +216,12 @@ class Trainer(object):
             engine.ctx.timer.pretrain = False
         torch.cuda.reset_peak_memory_stats()
         best_record = {"train_acc": 0,"val_acc": 0,"test_acc": 0,"loss": 1e6}
+        # the fixed staleness threshold, can be adjusted as needed, -1 indicating unbounded staleness
+        STALENESS_THRESHOLD = -1  
+        staleness_counter = 0
         for epoch in range(1, epoches + 1):
             # with torch.profiler.record_function('train_epoch'):
             # note: replace, instead of delete
-            # if engine.ctx.our_cache: engine.ctx.storage_server.clear_cache(rank)
             engine.ctx.timer.is_train = True
             with engine.ctx.timer.record('epoch'):
                 loss = train_for_one_epoch(our, epoch, engine.ctx.graph,
@@ -229,6 +231,8 @@ class Trainer(object):
                                            self.config['runtime']['reducer'],
                                            self.config['runtime']['usecast'])
             engine.ctx.timer.is_train = False
+            staleness_counter += 1
+            need_sync = (STALENESS_THRESHOLD>0) and (staleness_counter >= STALENESS_THRESHOLD)
             # Verification and testing can be canceled when no timer is required
             if self.config['runtime']['eval']:
                 epoch_metrics = val_test(engine.ctx.graph, self.model, input_data, labels, train_mask, val_mask, test_mask, is_multilabel)
@@ -259,9 +263,16 @@ class Trainer(object):
             #         print(f'Loss {loss.item():.4f}')
             # prof.step()
             # engine.ctx.timer.is_train = True
-            # torch.cuda.synchronize() # It only opens when the cache hit is tested! !!!!!!!!!!!!!!!!!!!!!!!!
-            # comm.barrier()           # It only opens when the cache hit is tested! !!!!!!!!!!!!!!!!!!!!!!!!
+            # torch.cuda.synchronize() # only open when test the cache hit!
+            # comm.barrier()           # only open when test the cache hit!
             # if comm.get_rank() == 0: print('#' * 50)
+            
+            # perform a forced synchronization operation
+            if need_sync:
+                if rank==0: print(f"start all sync")
+                # engine.ctx.storage_server.clear_cache(rank)
+                engine.ctx.storage_server.cache_server.sync_all_procs()
+                staleness_counter = 0
 
         forward_time = engine.ctx.timer.peak_item('forward', TimerKeys.TOTAL) or 0
         check_cache_time = engine.ctx.timer.peak_item('check_cache', TimerKeys.TOTAL) or 0
