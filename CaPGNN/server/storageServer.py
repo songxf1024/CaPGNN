@@ -382,6 +382,49 @@ class CacheServer:
         splits = np.cumsum(indices + avg)
         return np.split(lst, splits[:-1])
 
+    def sync_all_procs(self):
+        """
+        Synchronize the global cache and local cache to achieve fixed epoch synchronization with bounded stale policies
+        TODO: Optimize performance
+        """
+        debug(f"[Rank {self.rank}] Start synchronizing the cache for all processes...")
+        # Use the barrier to wait for all processes to reach the synchronization point
+        self.barrier_wait()
+
+        # Collect all the updates that need to be synchronized to the global process
+        all_updates = {}
+        for name in self.l_feature_pool.keys():
+            local_keys = self.l_feature_ids_map_keys[name]
+            local_values = self.l_feature_ids_map_values[name]
+            if len(local_keys) == 0: continue
+            local_features = self.l_feature_pool[name][local_values]
+            local_features = local_features.cpu()
+            updates = {local_keys[i]: local_features[i] for i in range(len(local_keys))}
+            all_updates[name] = updates
+
+        # Synchronize updates from each process to the global cache
+        debug(f"[Rank {self.rank}] Synchronize local cache to global cache...")
+        for name, updates in all_updates.items():
+            self.add_halo_features_to_global(name, updates)
+
+        # Wait for all processes to complete global update
+        self.barrier_wait()
+
+        # Pull the latest data from the global cache to the local cache of each process
+        debug(f"[Rank {self.rank}] Pull the latest data from the global cache...")
+        for name in self.l_feature_pool.keys():
+            global_keys, global_indices = self.get_g_feature_ids_map_kv(name)
+            if len(global_keys) == 0: continue
+            global_keys_tensor = torch.from_numpy(global_keys).to(self.device)
+            global_features = self.g_feature_pool[name][0][global_indices]
+            global_features = global_features.to(self.device)
+            global_features_dict = {global_keys[i]: global_features[i] for i in range(len(global_keys))}
+            self.add_halo_features_to_local(name, global_features_dict)
+
+        debug(f"[Rank {self.rank}] Cache synchronization complete")
+        # Ensure that all processes are synchronized
+        self.barrier_wait()  
+
     # Find whether it is in cache by id, no need to return feature
     def is_feature_in_local_cache(self, name, feature_ids):
         if self.cache_alg != CACHEALG.JACA:
