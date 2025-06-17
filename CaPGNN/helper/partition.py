@@ -1,15 +1,62 @@
 import os
 import dgl
 import numpy as np
+import pandas
+import requests
 import torch
 import torch_geometric
 from dgl import DGLHeteroGraph
 from ogb.graphproppred import DglGraphPropPredDataset
 from ogb.linkproppred import DglLinkPropPredDataset
 from ogb.nodeproppred import DglNodePropPredDataset
-
 from .dataset import AmazonProducts, load_yelp
 
+
+def _download(url, path, filename):
+    fn = os.path.join(path, filename)
+    if os.path.exists(fn): return
+    os.makedirs(path, exist_ok=True)
+    f_remote = requests.get(url, stream=True)
+    sz = f_remote.headers.get("content-length")
+    assert f_remote.status_code == 200, "fail to open {}".format(url)
+    with open(fn, "wb") as writer:
+        for chunk in f_remote.iter_content(chunk_size=1024 * 1024):
+            writer.write(chunk)
+    print("Download finished.")
+
+def get_friendster(raw_dir, format=None):
+    # from dgl_benchmarks
+    if isinstance(format, str): format = [format]  # didn't specify format
+    if format is None: format = ["csc", "csr", "coo"]
+    bin_path = f"{raw_dir}/friendster/friendster_{format}.bin"
+    if os.path.exists(bin_path):
+        g_list, _ = dgl.load_graphs(bin_path)
+        g = g_list[0]
+    else:
+        print("downloading...")
+        # Same as https://snap.stanford.edu/data/bigdata/communities/com-friendster.ungraph.txt.gz
+        _download(
+            "https://dgl-asv-data.s3-us-west-2.amazonaws.com/dataset/friendster/com-friendster.ungraph.txt.gz",
+            f"{raw_dir}/friendster",
+            "com-friendster.ungraph.txt.gz",
+        )
+        print("reading...")
+        df = pandas.read_csv(
+            f"{raw_dir}/friendster/com-friendster.ungraph.txt.gz",
+            sep="\t",
+            skiprows=4,
+            header=None,
+            names=["src", "dst"],
+            compression="gzip",
+        )
+        src = df["src"].values
+        dst = df["dst"].values
+        print("construct the graph")
+        # the original node IDs of friendster are not consecutive, so we compact it
+        g = dgl.compact_graphs(dgl.graph((src, dst))).formats(format)
+        dgl.save_graphs(bin_path, [g])
+        print("complete")
+    return g
 
 def process_obg_dataset(dataset: str, raw_dir: str):
     '''
@@ -115,7 +162,8 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
             # graph.ndata['train_mask'] = train_mask
             # graph.ndata['val_mask'] = val_mask
             # graph.ndata['test_mask'] = test_mask
-
+    elif dataset == 'friendster':
+        graph = get_friendster(raw_dir)
     else:
         raise ValueError(f'no such dataset: {dataset}')
 
