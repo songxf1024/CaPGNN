@@ -93,7 +93,7 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
     Partition and store the dataset
     we set HALO hop as 1 to save cross-device neighboring nodes' indices for constructing send/recv idx.
     '''
-    dataset_map = {
+    dgl_dataset_map = {
         'reddit': dgl.data.RedditDataset,                            # Nodes: 232965, Edges: 114615892, Classes: 41, Dim: 602
         'amazonProducts': AmazonProducts,
         'cora': dgl.data.CoraGraphDataset,                           # Nodes: 2708,   Edges: 10556,     Classes: 7,  Dim: 1433
@@ -105,11 +105,15 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
         'coraFull': dgl.data.CoraFullDataset,
     }
     if dgl.__version__ > '1.0':
-        dataset_map.update({
+        dgl_dataset_map.update({
             'amazonRatings': dgl.data.AmazonRatingsDataset,              # dglv2
             'tolokers': dgl.data.TolokersDataset,
         })
-
+    
+    pyg_dataset_map = {
+        'reddit2': torch_geometric.datasets.Reddit2,
+        'wikidata5M': torch_geometric.datasets.Wikidata5M,
+    }
 
     # the dir to store graph partition
     partition_dir = '{}/{}/{}part'.format(part_dir, dataset, partition_size)
@@ -121,11 +125,11 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
     elif dataset == 'yelp':
         # PyG dataset needs to be processed
         # data = torch_geometric.datasets.Yelp(root=os.path.join(raw_dir, dataset))
-        data = dataset_map[dataset](raw_dir=raw_dir)
+        data = dgl_dataset_map[dataset](raw_dir=raw_dir)
         graph = load_yelp(raw_dir=raw_dir)
-    elif dataset_map.get(dataset):
+    elif dgl_dataset_map.get(dataset):
         # All DGL datasets can be used directly
-        data = dataset_map[dataset](raw_dir=raw_dir)
+        data = dgl_dataset_map[dataset](raw_dir=raw_dir)
         graph = data[0]
         # If no mask is provided, it is necessary to generate it manually randomly
         if graph.ndata.get('train_mask') is None:
@@ -162,6 +166,9 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
             # graph.ndata['train_mask'] = train_mask
             # graph.ndata['val_mask'] = val_mask
             # graph.ndata['test_mask'] = test_mask
+    elif pyg_dataset_map.get(dataset):
+        data = pyg_dataset_map[dataset](root=os.path.join(raw_dir, dataset))  # , name=dataset
+        graph = torch_geometric.utils.to_dgl(data[0])
     elif dataset == 'friendster':
         graph = get_friendster(raw_dir)
     else:
