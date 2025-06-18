@@ -78,19 +78,25 @@ def generate_random_node_features(g, feat_dim=128, num_classes=10, train_ratio=0
     nodes_feats = nodes_feats or {}
     ntypes = g.ntypes if isinstance(g, dgl.DGLHeteroGraph) else ['_N']
     for ntype in ntypes:
-        num_nodes = g.num_nodes(ntype) if isinstance(g, dgl.DGLHeteroGraph) else g.num_nodes()
-        nodes_feats[f'{ntype}/feat'] = torch.randn(num_nodes, feat_dim)
-        nodes_feats[f'{ntype}/label'] = torch.randint(0, num_classes, (num_nodes,), dtype=torch.long)
-        indices = torch.randperm(num_nodes)
-        num_train = int(train_ratio * num_nodes)
-        num_val = int(val_ratio * num_nodes)
-        num_test = num_nodes - num_train - num_val
-        train_mask = torch.zeros(num_nodes, dtype=torch.bool)
-        val_mask = torch.zeros(num_nodes, dtype=torch.bool)
-        test_mask = torch.zeros(num_nodes, dtype=torch.bool)
-        train_mask[indices[:num_train]] = True
-        val_mask[indices[num_train:num_train + num_val]] = True
-        test_mask[indices[num_train + num_val:]] = True
+        inner_mask = g.nodes[ntype].data.get('inner_node', None)
+        if inner_mask is None: continue
+        inner_idx = inner_mask.nonzero(as_tuple=True)[0]
+        N_inner = inner_idx.size(0)
+
+        feat = torch.randn(N_inner, feat_dim)
+        label = torch.randint(0, num_classes, (N_inner,), dtype=torch.long)
+        idx_perm = torch.randperm(N_inner)
+        n_train = int(train_ratio * N_inner)
+        n_val = int(val_ratio * N_inner)
+        train_mask = torch.zeros(N_inner, dtype=torch.bool)
+        val_mask = torch.zeros(N_inner, dtype=torch.bool)
+        test_mask = torch.zeros(N_inner, dtype=torch.bool)
+        train_mask[idx_perm[:n_train]] = True
+        val_mask[idx_perm[n_train:n_train + n_val]] = True
+        test_mask[idx_perm[n_train + n_val:]] = True
+
+        nodes_feats[f'{ntype}/feat'] = feat
+        nodes_feats[f'{ntype}/label'] = label
         nodes_feats[f'{ntype}/train_mask'] = train_mask
         nodes_feats[f'{ntype}/val_mask'] = val_mask
         nodes_feats[f'{ntype}/test_mask'] = test_mask
