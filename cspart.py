@@ -71,6 +71,31 @@ class GraphInfo(object):
         attributes = ',\n>> '.join(f"{key}={format_value(value)}" for key, value in self.__dict__.items())
         return f"{self.__class__.__name__}(\n>> {attributes}\n)"
 
+def generate_random_node_features(g, feat_dim=128, num_classes=10, train_ratio=0.8, val_ratio=0.1, nodes_feats=None):
+    """
+    Generate random node features and labels for DGL graphs (isomorphic or heterogeneous), including feat, label, train/val/test mask.
+    """
+    nodes_feats = nodes_feats or {}
+    ntypes = g.ntypes if isinstance(g, dgl.DGLHeteroGraph) else ['_N']
+    for ntype in ntypes:
+        num_nodes = g.num_nodes(ntype) if isinstance(g, dgl.DGLHeteroGraph) else g.num_nodes()
+        nodes_feats[f'{ntype}/feat'] = torch.randn(num_nodes, feat_dim)
+        nodes_feats[f'{ntype}/label'] = torch.randint(0, num_classes, (num_nodes,), dtype=torch.long)
+        indices = torch.randperm(num_nodes)
+        num_train = int(train_ratio * num_nodes)
+        num_val = int(val_ratio * num_nodes)
+        num_test = num_nodes - num_train - num_val
+        train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+        val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+        test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+        train_mask[indices[:num_train]] = True
+        val_mask[indices[num_train:num_train + num_val]] = True
+        test_mask[indices[num_train + num_val:]] = True
+        nodes_feats[f'{ntype}/train_mask'] = train_mask
+        nodes_feats[f'{ntype}/val_mask'] = val_mask
+        nodes_feats[f'{ntype}/test_mask'] = test_mask
+    return nodes_feats
+
 
 class CSPart(object):
     def __init__(self, args):
@@ -117,6 +142,10 @@ class CSPart(object):
             #      - nid2partid(nid)：Returns the partition ID where the specified node ID is located.
             #      - eid2partid(eid)：Returns the partition ID where the specified edge ID is located.
             g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
+            if len(nodes_feats.keys()) == 0:
+                nodes_feats = {k: v for k, v in g.ndata.items()}
+                # note: only for training purposes, not for accuracy
+                generate_random_node_features(g=g, feat_dim=128, num_classes=64, train_ratio=0.8, val_ratio=0.1, nodes_feats=nodes_feats)
             # set graph degrees for GNNs aggregation
             # print(f'{rank}=>{g.formats()} [METIS]')
             save_dir = f'{partition_dir}/graph_degrees'
