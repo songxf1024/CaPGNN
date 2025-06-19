@@ -173,58 +173,6 @@ if __name__ == '__main__':
         ('coauthorPhysics'        , 8415),  # 9
         ('coraFull'               , 8710),  # 10
     ]
-    '''
-    Used in the early test, it has been replaced by using StorageServer.cal_capacity to automatically calculate the cache capacity.
-    Description of the cache_max_size data composition:
-    cache_size = cache_max_size[tools.outer_ip][args.dataset][args.our_partition][args.num_parts][gpus_index]
-                                  [Server IP] [Dataset Name] [Does partition use] [Number of partitions] [GPU group index] <= cache capacity
-                                    '228'  : 'coauthorPhysics': {   True :       {      2:    {       1:          8862   }, }  },
-    '''
-    cache_max_size      = {
-        '228': {
-            'coauthorPhysics': {
-                True : {2: {0: 5095, }, 3: {0: 6432, }, 4: {0: 4562, }, 5: {0: 5130, }, 6: {0: 8011, }, 7: {0: 1584, }, 8: {0: 3407, } },
-                False: {2: {0: 9430, }, 3: {0: 15913, }, 4: {0: 18676, }, 5: {0: 19904, }, }
-            },
-            'flickr': {
-                True : {2: {0: 56258, }, 3: {0: 62523, }, 4: {0: 51327, }, 5: {0: 63877, }, 6: {0: 35127, }, 7: {0: 56232, }, 8: {0: 67891, }, },
-                False: {2: {0: 56601, }, 3: {0: 66386, }, 4: {0: 69169, }, 5: {0: 72724, }, }
-            },
-            'reddit': {
-                True : {2: {0: 68124, }, 3: {0: 81148, }, 4: {0: 137946, }, 5: {0: 91832, }, 6: {0: 137971, }, 7: {0: 84486, }, 8: {0: 73175, }, },
-                False: {2: {0: 143842,}, 3: {0: 183030,}, 4: {0: 184796, }, 5: {0: 193032,}, 6: {0: 214983, }, 7: {0: 206183,}, 8: {0: 208836, }}
-            },
-            'yelp': {
-                True : {2: {0: 138011, }, 3: {0: 146456, }, 4: {0: 163150, }, 5: {0: 101171, }, 6: {0: 158378, }, 7: {0: 257776, }, 8: {0: 253573, }, },
-                False: {2: {0: 256104, }, 3: {0: 329851, }, 4: {0: 351357, }, 5: {0: 377335, }, }
-            },
-            'coraFull': {
-                True : {2: {0: 835, }, 3: {0: 2845, }, 4: {0: 1615, }, 5: {0: 3656, }, 6: {0: 3256, }, 7: {0: 3447, }, 8: {0: 3983, } },
-                False: {2: {0: 1685, }, 3: {0: 3832, }, 4: {0: 4728, }, 5: {0: 5253, }, }
-            },
-            'ogbn-products': { #                                                                                  80                110
-                True : {2: {0: 234907, }, 3: {0: 179163, }, 4: {0: 182500, }, 5: {0: 307121, }, 6: {0: 607750, }, 7: {0: 59602, }, 8: {0: 142295, }, },
-                False: {2: {0: 444209, }, 3: {0: 677482, }, 4: {0: 825510, }, 5: {0: 877016, }, }
-            },
-            'amazonProducts': { #                                                                                                   500...
-                True : {2: {0: 271693, }, 3: {0: 156015, }, 4: {0: 135114, }, 5: {0: 259760, }, 6: {0: 164521, }, 7: {0: 259760, }, 8: {0: 0, }, },
-                False: {2: {0: 496490, }, 3: {0: 582151, }, 4: {0: 677847, }, 5: {0: 668084, }, }
-            },
-            'amazonCoBuyComputer': {
-                True : {2: {0: 2598, }, 3: {0: 4046, }, 4: {0: 2149, }, 5: {0: 2718, }, },
-                False: {2: {0: 4888, }, 3: {0: 7009, }, 4: {0: 8458, }, 5: {0: 8157, }, }
-            },
-        },
-        '229': {
-            'flickr'           : {True : {2: {0: 56367  }, 3: {0: 60722  }, 4: {0: 53593   }}, False: {2: {0: 56601  }, 3: {0: 66386  }, 4: {0: 69169  }}},
-            'reddit'           : {True : {2: {0: 98507  }, 3: {0: 73788  }, 4: {0: 116524  }}, False: {2: {0: 181683 }, 3: {0: 172413 }, 4: {0: 185846 }}},
-            'coraFull'         : {True : {2: {0: 881    }, 3: {0: 1681   }, 4: {0: 1792    }}, False: {2: {0: 1840   }, 3: {0: 3832   }, 4: {0: 4677   }}},
-            'coauthorPhysics'  : {True : {2: {0: 5095   }, 3: {0: 6476   }, 4: {0: 5057    }}, False: {2: {0: 9430   }, 3: {0: 15913  }, 4: {0: 18676  }}},
-            'ogbn-products'    : {True : {2: {0: 234907 }, 3: {0: 167303 }, 4: {0: 187753  }}, False: {2: {0: 444209 }, 3: {0: 677482 }, 4: {0: 825510 }}},
-            'amazonProducts'   : {True : {2: {0: 271693 }, 3: {0: 241294 }, 4: {0: 223406  }}, False: {2: {0: 496400 }, 3: {0: 547328 }, 4: {0: 626519 }}},
-            'yelp'             : {True : {2: {0: 256104 }, 3: {0: 329851 }, 4: {0: 351357  }}, False: {2: {0: 141304 }, 3: {0: 171324 }, 4: {0: 164538 }}},
-        }
-    }
     policy_map  = {
         'adaqp'    : {'our_cache': False, 'our_partition': False},
         'cache'    : {'our_cache': True , 'our_partition': False},
@@ -286,8 +234,6 @@ if __name__ == '__main__':
     print(f'>> √Using pipelines: {args.use_pipeline}')
     print(f'>> Models used: {args.model_name}')
     if args.our_cache:
-        # args.gcache_size = cache_max_size[tools.outer_ip][args.dataset][args.our_partition][args.num_parts][gpus_index] if args.our_cache else 0
-        # args.lcache_size = cache_max_size[tools.outer_ip][args.dataset][args.our_partition][args.num_parts][gpus_index] if args.our_cache else 0
         # 5000,10000,20000,40000,60000,80000,100000,120000,140000,160000,180000,200000,220000,240000,260000,
         # for cache_size in [10000,20000,40000,60000,80000,100000,120000,140000,160000,180000,200000,220000,240000,260000,]:
         #     args.lcache_size = cache_size  # int(0.2*args.lcache_size)
