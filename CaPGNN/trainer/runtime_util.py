@@ -2,6 +2,7 @@ import logging
 import random
 import time
 import torch
+from torch.utils.checkpoint import checkpoint
 from typing import Any, List, Union
 from dgl import DGLHeteroGraph
 from torch import Tensor

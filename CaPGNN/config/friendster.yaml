@@ -1,0 +1,5 @@
+data:
+  name: friendster
+  num_feats: 256
+  num_classes: 64
+  is_multilabel: false

@@ -1,13 +1,14 @@
 import os
 import dgl
 import numpy as np
+import pandas
+import requests
 import torch
 import torch_geometric
 from dgl import DGLHeteroGraph
 from ogb.graphproppred import DglGraphPropPredDataset
 from ogb.linkproppred import DglLinkPropPredDataset
 from ogb.nodeproppred import DglNodePropPredDataset
-
 from .dataset import AmazonProducts, load_yelp
 
 
@@ -17,7 +18,9 @@ def process_obg_dataset(dataset: str, raw_dir: str):
     '''
     if dataset in ['ogbn-products',
                    'ogbn-arxiv',   # Nodes: 169343, Edges: 1166243, Classes: 40, Dim: 128
-                   'ogbn-proteins']:
+                   'ogbn-proteins',
+                   'ogbn-papers100M',
+                   ]:
         data = DglNodePropPredDataset(name=dataset, root=raw_dir)
     # elif dataset in ['ogbg-molhiv', ]:
     #     data = DglGraphPropPredDataset(name=dataset, root=raw_dir)
@@ -41,12 +44,57 @@ def process_obg_dataset(dataset: str, raw_dir: str):
     graph.ndata['test_mask'] = test_mask
     return graph
 
+def _download(url, path, filename):
+    fn = os.path.join(path, filename)
+    if os.path.exists(fn): return
+    os.makedirs(path, exist_ok=True)
+    f_remote = requests.get(url, stream=True)
+    sz = f_remote.headers.get("content-length")
+    assert f_remote.status_code == 200, "fail to open {}".format(url)
+    with open(fn, "wb") as writer:
+        for chunk in f_remote.iter_content(chunk_size=1024 * 1024):
+            writer.write(chunk)
+    print("Download finished.")
+
+def get_friendster(raw_dir, format=None):
+    if isinstance(format, str): format = [format]  # didn't specify format
+    if format is None: format = ["csc", "csr", "coo"]
+    bin_path = f"{raw_dir}/friendster/friendster_{format}.bin"
+    if os.path.exists(bin_path):
+        g_list, _ = dgl.load_graphs(bin_path)
+        g = g_list[0]
+    else:
+        print("downloading...")
+        # Same as https://snap.stanford.edu/data/bigdata/communities/com-friendster.ungraph.txt.gz
+        _download(
+            "https://dgl-asv-data.s3-us-west-2.amazonaws.com/dataset/friendster/com-friendster.ungraph.txt.gz",
+            f"{raw_dir}/friendster",
+            "com-friendster.ungraph.txt.gz",
+        )
+        print("reading...")
+        df = pandas.read_csv(
+            f"{raw_dir}/friendster/com-friendster.ungraph.txt.gz",
+            sep="\t",
+            skiprows=4,
+            header=None,
+            names=["src", "dst"],
+            compression="gzip",
+        )
+        src = df["src"].values
+        dst = df["dst"].values
+        print("construct the graph")
+        # the original node IDs of friendster are not consecutive, so we compact it
+        g = dgl.compact_graphs(dgl.graph((src, dst))).formats(format)
+        dgl.save_graphs(bin_path, [g])
+        print("complete")
+    return g
+
 def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'dataset', part_dir: str = 'part_data', num_hops=1, part_method='metis'):
     '''
     对数据集进行分区并存储
     we set HALO hop as 1 to save cross-device neighboring nodes' indices for constructing send/recv idx.
     '''
-    dataset_map = {
+    dgl_dataset_map = {
         'reddit': dgl.data.RedditDataset,                            # Nodes: 232965, Edges: 114615892, Classes: 41, Dim: 602
         'amazonProducts': AmazonProducts,
         'cora': dgl.data.CoraGraphDataset,                           # Nodes: 2708,   Edges: 10556,     Classes: 7,  Dim: 1433
@@ -58,11 +106,15 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
         'coraFull': dgl.data.CoraFullDataset,
     }
     if dgl.__version__ > '1.0':
-        dataset_map.update({
+        dgl_dataset_map.update({
             'amazonRatings': dgl.data.AmazonRatingsDataset,              # dglv2
             'tolokers': dgl.data.TolokersDataset,
         })
 
+    pyg_dataset_map = {
+        'reddit2': torch_geometric.datasets.Reddit2,
+        'wikidata5M': torch_geometric.datasets.Wikidata5M,
+    }
 
     # the dir to store graph partition
     partition_dir = '{}/{}/{}part'.format(part_dir, dataset, partition_size)
@@ -74,11 +126,11 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
     elif dataset == 'yelp':
         # PyG的数据集更需要处理一下
         # data = torch_geometric.datasets.Yelp(root=os.path.join(raw_dir, dataset))
-        data = dataset_map[dataset](raw_dir=raw_dir)
+        data = dgl_dataset_map[dataset](raw_dir=raw_dir)
         graph = load_yelp(raw_dir=raw_dir)
-    elif dataset_map.get(dataset):
+    elif dgl_dataset_map.get(dataset):
         # DGL的数据集都可以直接用
-        data = dataset_map[dataset](raw_dir=raw_dir)
+        data = dgl_dataset_map[dataset](raw_dir=raw_dir)
         graph = data[0]
         # 如果没有提供mask，就需要手动随机生成
         if graph.ndata.get('train_mask') is None:
@@ -115,7 +167,12 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
             # graph.ndata['train_mask'] = train_mask
             # graph.ndata['val_mask'] = val_mask
             # graph.ndata['test_mask'] = test_mask
-
+    elif pyg_dataset_map.get(dataset):
+        data = pyg_dataset_map[dataset](root=os.path.join(raw_dir, dataset))  # , name=dataset
+        graph = torch_geometric.utils.to_dgl(data[0])
+        # graph = dgl.compact_graphs(graph).formats(["csc", "csr", "coo"])
+    elif dataset == 'friendster':
+        graph = get_friendster(raw_dir)
     else:
         raise ValueError(f'no such dataset: {dataset}')
 

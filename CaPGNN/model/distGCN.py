@@ -6,7 +6,7 @@ from torch.nn.parameter import Parameter
 from torch.nn import init
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torch.utils.checkpoint import checkpoint
 from .ops import DistAggConv
 from ..manager import DecompGraph
 from ..manager import GraphEngine as engine
@@ -94,10 +94,9 @@ class DistGCN(nn.Module):
                 bn.reset_parameters()
 
     def forward(self, g: Union[DGLHeteroGraph, DecompGraph], feats: Tensor) -> Tensor:
-
         for i, conv in enumerate(self.convs[:-1]):
             feats = conv(feats, g, i)
-            feats = F.dropout(feats, p=self.drop_rate, training=self.training)
+            feats = F.dropout(feats, p=self.drop_rate, training=self.training, inplace=True)
             if hasattr(self, 'norms'):
                 feats = self.norms[i](feats)
             feats = F.relu(feats, inplace=True)

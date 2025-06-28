@@ -71,11 +71,9 @@ python utils/eval_mm.py
 > The output in the console will be like:
 > ```bash
 > 07:35:59.305771 [0] Rank 0: NVIDIA GeForce RTX 3060
-> >> spmm
+> spmm
 > 07:35:59.307674 [0] Size: 512M  Repeat: 50
 > 07:36:12.598796 [0] 512M 50/50
-> **********
-> 07:36:12.599498 [0] 
 > Timer Summary:
 > Key             Total        Ave        Std      Count
 > --------------------------------------------------

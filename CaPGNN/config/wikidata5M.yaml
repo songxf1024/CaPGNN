@@ -1,0 +1,5 @@
+data:
+  name: wikipedia
+  num_feats: 128
+  num_classes: 16
+  is_multilabel: false

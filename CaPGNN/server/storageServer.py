@@ -389,6 +389,52 @@ class CacheServer:
         splits = np.cumsum(indices + avg)
         return np.split(lst, splits[:-1])
 
+    def sync_all_procs(self):
+        """
+        同步所有进程的全局缓存和局部缓存，实现有界过时策略的固定epoch同步
+        """
+        debug(f"[Rank {self.rank}] 开始同步所有进程的缓存...")
+        # 使用barrier等待所有进程到达同步点
+        self.barrier_wait()
+
+        # 1. 收集所有进程需要同步到全局的更新
+        all_updates = {}
+        for name in self.l_feature_pool.keys():
+            # 获取当前进程的局部缓存键值对
+            local_keys = self.l_feature_ids_map_keys[name]
+            local_values = self.l_feature_ids_map_values[name]
+            if len(local_keys) == 0: continue
+            # 转换为全局可访问的格式
+            local_features = self.l_feature_pool[name][local_values]
+            local_features = local_features.cpu()  # 转移到CPU以便共享
+            # 构建更新字典
+            updates = {local_keys[i]: local_features[i] for i in range(len(local_keys))}
+            all_updates[name] = updates
+
+        # 2. 将各进程的更新同步到全局缓存
+        debug(f"[Rank {self.rank}] 同步局部缓存到全局缓存...")
+        for name, updates in all_updates.items():
+            self.add_halo_features_to_global(name, updates)
+
+        # 等待所有进程完成全局更新
+        self.barrier_wait()
+
+        # 3. 从全局缓存拉取最新数据到各进程的局部缓存
+        debug(f"[Rank {self.rank}] 从全局缓存拉取最新数据...")
+        for name in self.l_feature_pool.keys():
+            # 获取全局缓存中的所有键
+            global_keys, global_indices = self.get_g_feature_ids_map_kv(name)
+            if len(global_keys) == 0: continue
+            global_keys_tensor = torch.from_numpy(global_keys).to(self.device)
+            global_features = self.g_feature_pool[name][0][global_indices]
+            global_features = global_features.to(self.device)
+            # 更新局部缓存
+            global_features_dict = {global_keys[i]: global_features[i] for i in range(len(global_keys))}
+            self.add_halo_features_to_local(name, global_features_dict)
+
+        debug(f"[Rank {self.rank}] 缓存同步完成")
+        self.barrier_wait()  # 确保所有进程完成同步
+
     # 根据id查找是否在cache中，无需返回feature
     def is_feature_in_local_cache(self, name, feature_ids):
         if self.cache_alg != CACHEALG.JACA:

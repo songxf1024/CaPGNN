@@ -1,0 +1,5 @@
+data:
+  name: ogbn-papers100M
+  num_feats: 128
+  num_classes: 172
+  is_multilabel: false

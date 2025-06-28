@@ -49,7 +49,8 @@ def GCN_aggregation(graph: DGLHeteroGraph,
             norm2 = graph.out_degrees().float().clamp(min=1).pow(-0.5)  # out degrees for backward
         else:
             raise ValueError(f'Invalid mode {mode}')
-        feats = feats * norm1.view(-1, 1)
+        # feats = feats * norm1.view(-1, 1)
+        feats.mul_(norm1.view(-1, 1))
         graph.srcdata['h'] = feats
         graph.update_all(aggregate_fn, fn.sum(msg='m', out='h'))
         rst = graph.dstdata['h'] * norm2.view(-1, 1)

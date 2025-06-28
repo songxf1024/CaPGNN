@@ -71,6 +71,36 @@ class GraphInfo(object):
         attributes = ',\n>> '.join(f"{key}={format_value(value)}" for key, value in self.__dict__.items())
         return f"{self.__class__.__name__}(\n>> {attributes}\n)"
 
+def generate_random_node_features(g, feat_dim=128, num_classes=10, train_ratio=0.8, val_ratio=0.1, nodes_feats=None):
+    """
+    Generate random node features and labels for DGL graphs (isomorphic or heterogeneous), including feat, label, train/val/test mask.
+    """
+    nodes_feats = nodes_feats or {}
+    ntypes = g.ntypes if isinstance(g, dgl.DGLHeteroGraph) else ['_N']
+    for ntype in ntypes:
+        inner_mask = g.nodes[ntype].data.get('inner_node', None)
+        if inner_mask is None: continue
+        inner_idx = inner_mask.nonzero(as_tuple=True)[0]
+        N_inner = inner_idx.size(0)
+
+        feat = torch.randn(N_inner, feat_dim)
+        label = torch.randint(0, num_classes, (N_inner,), dtype=torch.long)
+        idx_perm = torch.randperm(N_inner)
+        n_train = int(train_ratio * N_inner)
+        n_val = int(val_ratio * N_inner)
+        train_mask = torch.zeros(N_inner, dtype=torch.bool)
+        val_mask = torch.zeros(N_inner, dtype=torch.bool)
+        test_mask = torch.zeros(N_inner, dtype=torch.bool)
+        train_mask[idx_perm[:n_train]] = True
+        val_mask[idx_perm[n_train:n_train + n_val]] = True
+        test_mask[idx_perm[n_train + n_val:]] = True
+
+        nodes_feats[f'{ntype}/feat'] = feat
+        nodes_feats[f'{ntype}/label'] = label
+        nodes_feats[f'{ntype}/train_mask'] = train_mask
+        nodes_feats[f'{ntype}/val_mask'] = val_mask
+        nodes_feats[f'{ntype}/test_mask'] = test_mask
+    return nodes_feats
 
 class CSPart(object):
     def __init__(self, args):
@@ -117,6 +147,15 @@ class CSPart(object):
             #      - nid2partid(nid)：返回指定节点ID所在的分区ID。
             #      - eid2partid(eid)：返回指定边ID所在的分区ID。
             g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
+            if len(nodes_feats.keys())==0 or '_N/x' in nodes_feats:
+                # x = nodes_feats['_N/x']
+                nodes_feats = {k: v for k, v in g.ndata.items()}
+                # note: only for training purposes, not for accuracy
+                generate_random_node_features(g=g, feat_dim=128, num_classes=16, train_ratio=0.8, val_ratio=0.1, nodes_feats=nodes_feats)
+                # if '_N/x' in nodes_feats:
+                #     nodes_feats['_N/feat'] = nodes_feats['_N/x']
+                #     nodes_feats.pop('_N/x')
+
             # set graph degrees for GNNs aggregation
             # print(f'{rank}=>{g.formats()} [METIS]')
             save_dir = f'{partition_dir}/graph_degrees'
@@ -140,7 +179,6 @@ class CSPart(object):
             nodes_feats['train_mask'] = nodes_feats[node_type + '/train_mask'].bool()
             nodes_feats['val_mask'] = nodes_feats[node_type + '/val_mask'].bool()
             nodes_feats['test_mask'] = nodes_feats[node_type + '/test_mask'].bool()
-
             # remove redundant feats
             nodes_feats.pop(node_type + '/val_mask')
             nodes_feats.pop(node_type + '/test_mask')
@@ -890,6 +928,9 @@ def partition1():
                       'coauthorPhysics',        # 9
                       'coraFull',               # 10
                       'tolokers',               # 11
+                      'ogbn-papers100M',        # 12
+                      'friendster',             # 13
+                      'wikidata5M',             # 14
                     ]
     gpu_groups = {
         '228': [
@@ -915,12 +956,12 @@ def partition1():
     }
 
     # python cspart.py --dataset_index=4 --part_num=5 --our_partition=1
-    # python cspart.py -p=1 -d=6 -n=4 -g=0
+    # python cspart.py -p=1 -d=13 -n=4 -g=0
     # ------------参数主要修改区---------------- #
     test_load_part          = False
     threshold               = 0.01
-    dataset_index           = args.dataset_index    or 6
-    part_num                = args.part_num         or 4
+    dataset_index           = args.dataset_index    or 4
+    part_num                = args.part_num         or 2
     gpus_index              = args.gpus_index       or 0
     our_partition           = args.our_partition    # or 1
     part_method             = ['metis', 'random'][0]
@@ -941,7 +982,9 @@ def partition1():
     args = vars(args)
     app = CSPart(args)
     # 1. 使用现成的分区算法进行预先分区；
-    app.coarse_graph_patition(fast_skip=True, part_method=part_method, num_hops=1)
+    t1 = time.time()
+    app.coarse_graph_patition(fast_skip=False, part_method=part_method, num_hops=1)
+    print('>> coarse graph patition: ', time.time() - t1)
     # 2. 构建局部加权图，即只为边缘的节点计算加权值；
     # 加载分区的子图和特征
     app.coarse_load_patition()
@@ -949,6 +992,7 @@ def partition1():
     # print('>> 原来的的数据类型：', app.graph_info[0].node_feats['feat'].dtype)
     # print('>> 合适的数据类型：', dtype)
     # 2.1 获取每个分区的发送、接收的顶点ID，以及边缘节点的度分数
+    t1 = time.time()
     app.get_send_recv_idx_scores(app.graph_info, skip_load=False, suffix='_init')
     # 2,2 重新排列图中节点ID的顺序（从 0 到 N-1：中心节点->边缘节点->边远节点
     app.reorder_graph(app.graph_info)
@@ -957,15 +1001,18 @@ def partition1():
     assig_graphs_gpus = app.assignment_graphs(gpus, app.graph_info)
     app.get_halo_count()
     new_assig_graphs_gpus = copy.deepcopy(assig_graphs_gpus)
+    t2 = time.time()
     if our_partition and len(gpus.split(',')) > 1: new_assig_graphs_gpus = app.do_partition(new_assig_graphs_gpus, threshold=threshold)
     else: print(">> 不需要分区")
     print('=' * 100)
+    print('>> do partition: ', time.time() - t2)
 
     new_graph_info = []
     for index in range(len(app.sorted_gpu_ids)): new_graph_info.append(new_assig_graphs_gpus[app.sorted_gpu_ids[index]])
     app.get_send_recv_idx_scores(new_graph_info, skip_load=True)
     app.reorder_graph(new_graph_info)
     for index in range(len(app.sorted_gpu_ids)): assig_graphs_gpus[app.sorted_gpu_ids[index]] = new_graph_info[index]
+    print('>> fine patition: ', time.time() - t1)
 
     # 保存分区结果
     partition_file = os.path.join(app.partition_dir, f'{app.dataset_name}/{app.partition_size}part/{app.dataset_name}_processed_partitions_{our_partition}_{sorted(gpus_list)}.pkl')
@@ -1050,6 +1097,8 @@ def overlapping(dataset_name, partition_size):
 
 
 if __name__ == '__main__':
+    # os.environ['HTTP_PROXY'] = 'http://202.38.247.229:7890'
+    # os.environ['HTTPS_PROXY'] = 'http://202.38.247.229:7890'
     set_random_seeds(42)
     ## only partition
     # parser = argparse.ArgumentParser(description='graph partition scripts')

@@ -74,7 +74,9 @@ def main(rank, args, storage_server):
 
     lcache_size = args.lcache_size[rank] if type(args.lcache_size)==dict else args.lcache_size
     create_cache(alg=args.cache_alg, capacity=lcache_size, singleton=True, throw_err=False)
+    t1 = time.time()
     storage_server.init_local_sources(lcache_size, device, rank)
+    print('>> init cache: ', time.time() - t1)
     trainer = Trainer(args, storage_server)
     if args.our_cache:  # and args.cache_alg==CACHEALG.JACA:  #  and rank==0
         storage_server.get_halo_count(part_size=args.num_parts, dataset=args.dataset, gpus_list=args.gpus_list, part_dir='/mnt/disk/sxf/data/part_data', our_partition=args.our_partition)
@@ -172,6 +174,10 @@ if __name__ == '__main__':
         ('amazonCoBuyComputer'    , 767),   # 8
         ('coauthorPhysics'        , 8415),  # 9
         ('coraFull'               , 8710),  # 10
+        ('tolokers'               , 100),   # 11
+        ('ogbn-papers100M'        , 128),   # 12
+        ('friendster'             , 256),   # 13
+        ('wikidata5M'             , 128),   # 14
     ]
     '''
     前期测试时用，已经替换为使用StorageServer.cal_capacity自动计算出缓存容量
@@ -242,8 +248,8 @@ if __name__ == '__main__':
     # python main.py --dataset_index=6 --part_num=4 --gpus_index=0
     # python main.py -d=6              -n=4         -g=0
     # ------------参数主要修改区---------------- #
-    dataset_index       = args.dataset_index    or 6
-    partition_num       = args.part_num         or 6
+    dataset_index       = args.dataset_index    or 4
+    partition_num       = args.part_num         or 2
     gpus_index          = args.gpus_index       if args.gpus_index is not None else 0
     args.num_epoches    = 200                                        # 总训练轮数
     args.learning_rate  = 0.01                                       # 学习率. 可以搭配scheduler使用
@@ -306,7 +312,9 @@ if __name__ == '__main__':
     print("-" * 50)
 
     manager = Manager()
+    t1 = time.time()
     storage_server = StorageServer(manager, gpus_num=partition_num, gsize=args.gcache_size, dims=dims, cache_alg=args.cache_alg)
+    print('>> storage server: ', time.time() - t1)
     torch.multiprocessing.spawn(main, (args, storage_server), args.num_parts, join=True, daemon=True, start_method='spawn')
     print('=' * 50)
 

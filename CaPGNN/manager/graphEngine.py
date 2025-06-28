@@ -141,7 +141,7 @@ class GraphEngine(object):
             self._send_idx, self._recv_idx, self._scores = g_info.send_idx, g_info.recv_idx, g_info.agg_scores
             self._total_send_idx = g_info.total_send_idx
             # set feats and labels
-            self.feats = g_info.node_feats['feat'].to(self._device)
+            self.feats = g_info.node_feats['feat']
             self.labels = g_info.node_feats['label']
             # set masks
             self.train_mask = torch.nonzero(g_info.node_feats['train_mask']).squeeze()
@@ -278,10 +278,10 @@ class GraphEngine(object):
         # move masks
         self.train_mask = self.train_mask.to(self._device)
         self.val_mask = self.val_mask.to(self._device)
-        self.test_mask = self.test_mask.to(self._device)
+        # self.test_mask = self.test_mask.to(self._device)
         # g_info
         if self.our_cache:
-            self.g_info.node_feats['feat'] = self.g_info.node_feats['feat'].to(self._device)
+            self.g_info.node_feats['feat'] = self.feats  # self.g_info.node_feats['feat'].to(self._device)
             self.g_info.node_feats[dgl.NID] = self.g_info.node_feats[dgl.NID].to(self._device)
 
     '''
