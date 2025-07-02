@@ -15,8 +15,7 @@
 |-- utils
 ```
 > **News:**  
-> CaPGNN is easily extensible to **distributed systems**, and we have released a demo of the distributed version: [branch/dist](https://github.com/songxf1024/CaPGNN/tree/master).  
-> The architecture of this distributed version is:  
+> CaPGNN is easily extensible to **distributed systems**, and we have released a demo of the distributed version: [branch/dist](https://github.com/songxf1024/CaPGNN/tree/master). The architecture of this distributed version is:  
 > <div align="center"><img src="https://github.com/songxf1024/CaPGNN/blob/master/images/demo%20of%20distributed%20version.png?raw=true" width="600px" /></div>   
 
 ## Setup
