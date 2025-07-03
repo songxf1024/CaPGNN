@@ -100,11 +100,11 @@ class Printer(object):
 
 @unique
 class TimerKeys(Enum):
-    START   = 'start'   # 本次调用start函数时的时间戳
-    END     = 'end'     # 本次调用end函数时的时间戳
-    ELAPSED = 'elapsed' # 多次调用start和end函数的总耗时
-    TOTAL   = 'total'   # 本次所耗end-start的时间
-    HISTORY = 'history' # 保存每次的elapsed
+    START   = 'start'   # The time stamp when the start function is called this time
+    END     = 'end'     # Timestamp when calling the end function
+    ELAPSED = 'elapsed' # Total time spent calling start and end functions multiple times
+    TOTAL   = 'total'   # The end-start time spent this time
+    HISTORY = 'history' # Save each elapsed
 
 
 import time
@@ -112,21 +112,19 @@ import time
 
 class TimerRecord:
     """
-    一个计时上下文管理器，用于测量代码块的执行时间。
-    它可以根据用户的需求以秒或纳秒为单位测量时间。
-
-    属性:
-        use_ns (bool): 如果为True，则计时器以纳秒为单位测量时间；如果为False，则以秒为单位。
-        start (float|int): 测量开始的时间。
-        end (float|int): 测量结束的时间。
-        interval (float|int): 计算的开始和结束时间之间的持续时间。
+    A timing context manager that measures the execution time of a code block. It can measure time in seconds or nanoseconds according to user needs.
+    property:
+        use_ns (bool): If True, the timer measures time in nanoseconds; if False, the unit is seconds.
+        start (float|int): The time to start the measurement.
+        end (float|int): The time at which the measurement ends.
+        interval (float|int): The duration between the calculated start and end times.
     """
 
     def __init__(self, use_ns=False, prefix='', show=True):
         """
-        使用选择是否使用纳秒精度初始化 Timer。
-        参数:
-            use_ns (bool): 确定是否使用纳秒进行时间测量，默认为False。
+        Use to select whether to initialize the Timer with nanosecond precision.
+        parameter:
+            use_ns (bool): Determines whether to use nanoseconds for time measurement, default is False.
         """
         self.use_ns = use_ns
         self.start = None
@@ -137,9 +135,9 @@ class TimerRecord:
 
     def __enter__(self):
         """
-        启动计时器。当进入上下文块时记录开始时间。
-        返回:
-            Timer: 返回自身对象，以便在上下文外部访问属性。
+        Start the timer. Record the start time when entering the context block.
+        return:
+            Timer: Returns its own object to access properties outside the context.
         """
         if self.use_ns:
             self.start = time.perf_counter_ns()
@@ -149,23 +147,23 @@ class TimerRecord:
 
     def __exit__(self, exc_type, exc_value, traceback):
         """
-        结束计时器。当退出上下文块时记录结束时间。
-        此函数还计算时间间隔并打印经过的时间。
-        参数:
-            exc_type: 如果在上下文中引发异常，则为异常类型。
-            exc_value: 如果引发异常，则为异常值。
-            traceback: 如果发生异常，则为回溯详细信息。
-        返回:
+        End timer. Record the end time when the context block is exited.
+        This function also calculates the time interval and prints the elapsed time.
+        parameter:
+            excc_type: If an exception is raised in the context, it is an exception type.
+            exc_value: If an exception is raised, it is an outlier.
+            traceback: If an exception occurs, it is the traceback details.
+        return:
             None
         """
         if self.use_ns:
             self.end = time.perf_counter_ns()
             self.interval = self.end - self.start
-            if self.show: print(f"{self.prefix} 经过时间：{self.interval} 纳秒")
+            if self.show: print(f"{self.prefix} Elapsed time: {self.interval} nanoseconds")
         else:
             self.end = time.perf_counter()
             self.interval = self.end - self.start
-            if self.show: print(f"{self.prefix} 经过时间：{self.interval:.6f} 秒")
+            if self.show: print(f"{self.prefix} Elapsed time: {self.interval:.6f} seconds")
 
 
 
@@ -201,7 +199,7 @@ class Timer(object):
         # torch.cuda.current_stream(self._device).synchronize()
         gap = time.perf_counter() - start
         self._record_sxf[name] += gap
-        if show: print(f"{name} 经过时间：{gap} 秒")
+        if show: print(f"{name} Time passed{gap} �")
 
     def epoch_traced_time(self):
         total_com = 0
@@ -226,9 +224,8 @@ class Timer(object):
         self._total_record = []
 
     def start(self, name, history=False):
-        '''开始计时，通过name区分不同的计时器；
-        在start时如果开启了history，就算下次start时没有开启history，history仍然会使用，
-        除非显式调用了reset_all或reset_item，然后再调用start并不开启history，就不会记录。'''
+        '''Start timing and distinguish different timers by name; if history is enabled at start, even if history is not enabled at the next start, history will still be used.
+        Unless reset_all or reset_item is explicitly called, and then start is called and history does not turn on, it will not be recorded.'''
         if not self.is_train: return
         if self.pretrain: return
         if name not in ['epoch', 'msg_comm']: return
@@ -243,7 +240,7 @@ class Timer(object):
         self._record_sxf[name][TimerKeys.START] = time.perf_counter()
 
     def stop(self, name, store=True):
-        '''计算指定name的本次耗时'''
+        '''Calculate the time spent on the specified name'''
         if not self.is_train: return
         if self.pretrain: return
         if name not in ['epoch', 'msg_comm']: return
@@ -253,16 +250,16 @@ class Timer(object):
             self._record_sxf[name][TimerKeys.ELAPSED] = self._record_sxf[name][TimerKeys.END] - self._record_sxf[name][TimerKeys.START]
             return self.store(name) if store else self._record_sxf[name][TimerKeys.ELAPSED]
         else:
-            print(f'>> 不存在此计时器[{name}]，请先start')
+            print(f'>> This timer [{name}] does not exist, please start first')
         return None
 
     def store(self, name):
-        '''计算指定name的累计耗时'''
+        '''Calculate the cumulative time spent on a specified name'''
         if not self._record_sxf.get(name):
-            print(f'>> 不存在此计时器[{name}]，请先start')
+            print(f'>> This timer [{name}] does not exist, please start first')
             return None
         if not self._record_sxf[name].get(TimerKeys.ELAPSED):
-            print(f'>> 请先stop')
+            print(f'>> Please stop first')
             return None
         self._record_sxf[name][TimerKeys.TOTAL] += self._record_sxf[name][TimerKeys.ELAPSED]
         if self._record_sxf[name].get(TimerKeys.HISTORY) is not None:
@@ -270,7 +267,7 @@ class Timer(object):
         return self._record_sxf[name][TimerKeys.TOTAL]
 
     def show_store(self):
-        '''显示所有项目的累计耗时'''
+        '''Shows the cumulative time consumption of all items'''
         print(self._record_sxf)
 
     def pretty_show_store(self, prefix='', simple=True):
@@ -336,7 +333,7 @@ class TimerCtx:
         if self.cuda:
             self.end_event.record(self.stream)
             self.stream.synchronize()
-            duration = self.start_event.elapsed_time(self.end_event) / 1000.0  # 转换为秒
+            duration = self.start_event.elapsed_time(self.end_event) / 1000.0  # Convert to seconds
         else:
             duration = time.perf_counter() - self.timer.start_time_dict[self.key]
         self.timer._log_duration(self.key, duration)
@@ -377,9 +374,9 @@ class DistTimer:
             if len(data) > 1:
                 avg_dict[key], std_dict[key] = statistics.mean(data), statistics.pstdev(data)
             elif len(data) == 1:
-                avg_dict[key], std_dict[key] = data[0], 0.0  # 如果只有一个数据点，标准差为0
+                avg_dict[key], std_dict[key] = data[0], 0.0  # If there is only one data point, the standard deviation is 0
             else:
-                avg_dict[key], std_dict[key] = float('nan'), float('nan')  # 没有数据点，设置为NaN
+                avg_dict[key], std_dict[key] = float('nan'), float('nan')  # No data points, set to NaN
             summary_list.append({
                 'key': key,
                 'avg': avg_dict[key],
@@ -472,4 +469,3 @@ if __name__ == '__main__':
     # {'e': {'total': 6.004979848861694, 'start': 1693419433.8564444, 'end': 1693419439.8614242, 'elapsed': 6.004979848861694},
     #  'f': {'total': 3.00180983543396, 'start': 1693419436.859731, 'end': 1693419439.8615408, 'elapsed': 3.00180983543396}}
     timer.pretty_show_store()
-

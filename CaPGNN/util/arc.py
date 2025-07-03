@@ -113,6 +113,6 @@ if __name__ == "__main__":
     arc_cache = ARC_Cache(cache_size=1000)
     for i in [1,2,3,4,5,1,2,3,4,6]:
         hit = arc_cache.arc_lookup(i)
-        if hit: print(f"命中请求: {i}")
+        if hit: print(f"cache hit: {i}")
     hit_ratio = arc_cache.get_hit_ratio()
-    print(f"命中率: {hit_ratio:.4f}")
+    print(f"hit rate: {hit_ratio:.4f}")

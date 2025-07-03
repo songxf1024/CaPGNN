@@ -15,6 +15,6 @@ def get_ip():
         except Exception as e:
             print(e)
             time.sleep(2)
-    print(f">> 当前IP：{outer_ip}")
+    print(f">> IP：{outer_ip}")
 
 get_ip()

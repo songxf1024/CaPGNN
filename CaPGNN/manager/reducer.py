@@ -4,16 +4,16 @@ from multiprocessing.pool import ThreadPool
 
 
 class Reducer(object):
-    '''用于同步模型参数梯度'''
+    '''Used to synchronize model parameter gradients'''
     def __init__(self):
         super(Reducer, self).__init__()
-        self._data_cpu = {} # 存储每个参数的梯度数据
+        self._data_cpu = {} # Store gradient data for each parameter
         self._pool = None
         self._handles = []
         self._stream = None
 
     def init(self, model):
-        '''为每个参数在CPU上分配内存并创建分布式组'''
+        '''Allocate memory on the CPU for each parameter and create a distributed group'''
         cnt = 0
         for i, (name, param) in enumerate(model.named_parameters()):
             cnt += 1

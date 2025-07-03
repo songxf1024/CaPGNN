@@ -14,7 +14,7 @@ from .reducer import Reducer
 
 class DecompGraph(object):
     '''
-    每个分区的分解图class，管理中心图和边缘图，以及它们相互获取信息的缓冲区。
+    The exploded graph class for each partition, the management center graph and the edge graph, and the buffers where they get information from each other.
     '''
     def __init__(self,
                  central_graph: DGLHeteroGraph,
@@ -88,14 +88,14 @@ def get_boundary(node_dict, gpb):
     return boundary
 
 def get_recv_shape(node_dict):
-    '''计算分布式训练中每个进程应该接收的数据量'''
+    '''Calculate the amount of data that each process should receive in distributed training'''
     rank, size = dist.get_rank(), dist.get_world_size()
     recv_shape = []
     for i in range(size):
         if i == rank:
             recv_shape.append(None)
         else:
-            # 计算其他进程需要发送给当前进程的数据量
+            # Calculate the amount of data that other processes need to send to the current process
             t = (node_dict['part_id'] == i).int().sum().item()
             recv_shape.append(t)
     return recv_shape
@@ -103,7 +103,7 @@ def get_recv_shape(node_dict):
 
 class GraphEngine(object):
     '''
-    管理图和各种节点特征（如特征、标签、mask等）。
+    Manage graphs and various node features (such as features, labels, masks, etc.).
     '''
     def __init__(self,
                  args,
@@ -115,13 +115,13 @@ class GraphEngine(object):
                  storage_server,
                  use_parallel=False,):
         if args['our_cache'] or args['do_reorder']:
-            print(">> 使用pkl <<")
+            print(">> use pkl <<")
             gpus_list = args['gpus_list']
-            # 按指标值降序排序，并获取对应的GPU设备key。值越大，计算成本越大，GPU越弱。
+            # Sort by indices value descending order and get the corresponding GPU device key. The larger the value, the greater the calculation cost and the weaker the GPU.
             sorted_gpu_ids = gpus_list  # get_gpu_capability(gpus_list)
-            partition_file = f'{part_dir}/{dataset}/{len(gpus_list)}part/{dataset}_processed_partitions_{args["our_partition"]}_{sorted(gpus_list)}.pkl'
+            partition_file = f'{part_dir}/{dataset}/{args["server_num"]}server/server{args["server_id"]}/{len(gpus_list)}part/{dataset}_processed_partitions_{args["our_partition"]}_{sorted(gpus_list)}.pkl'
             with open(partition_file, 'rb') as f: assig_graphs_gpus = pickle.load(f)
-            g_info = assig_graphs_gpus[sorted_gpu_ids[comm.get_rank()]]
+            g_info = assig_graphs_gpus[sorted_gpu_ids[comm.ctx.local_rank]]
             if args['cvt_fmts']:
                 g_info.graph = g_info.graph.formats(['coo', 'csr', 'csc'])  # ['coo', 'csr', 'csc']
                 g_info.graph.create_formats_()
@@ -150,16 +150,18 @@ class GraphEngine(object):
             self.gpb = g_info.gpb
             self._init_stream_ctx()
             print(f"GPU {torch.cuda.get_device_name(self._device)}: {self.graph}")
-            self.boundary = get_boundary(g_info.node_feats, g_info.gpb)
+            print(g_info.gpb)
+            self.boundary = None  # get_boundary(g_info.node_feats, g_info.gpb)
             # print(self.boundary)
             self.recv_shape = get_recv_shape(g_info.node_feats)
             print(self.recv_shape)
         else:
+            print(">> not use pkl <<")
             # load original graph and feats
             original_graph, original_feats, gpb, is_bidirected = convert_partition(part_dir, dataset)
             # get send_idx, recv_idx, and scores
             original_send_idx, recv_idx, scores = get_send_recv_idx_scores(original_graph, original_feats, gpb, part_dir, dataset, model_type)
-            # 重新排列图中节点ID的顺序（从 0 到 N-1：中心节点->边缘节点->边远节点）
+            # Rearrange the order of node IDs in the graph (from 0 to N-1: Center Node->Edge Node->Remote Node)
             reordered_graph, reordered_feats, reordered_send_idx, num_marginal, num_central = reorder_graph(original_graph, original_feats, original_send_idx)
             send_idx, total_idx = convert_send_idx(reordered_send_idx)
             reordered_graph.ndata['in_degrees'] = reordered_feats['in_degrees']
@@ -251,9 +253,9 @@ class GraphEngine(object):
 
         
     def _set_bwd_graph(self, use_parallel: bool, is_bidirected: bool):
-        # 重叠通信和计算 (暂时先不管这部分，只用顺序执行)
+        # Overlapping communication and calculation
         if use_parallel:
-            # 对于单向图，生成一个反向图. 只生成结构，不复制节点和边的数据
+            # For one-way graphs, generate a reverse graph. Only structures are generated, and data for nodes and edges are not copied.
             if not is_bidirected:
                 reverse_graph = dgl.reverse(self.graph, copy_ndata=False, copy_edata=False)
                 central_graph, marginal_graph, src_marginal_idx, src_central_idx = decompose_graph(reverse_graph, self.num_central, self.num_inner)

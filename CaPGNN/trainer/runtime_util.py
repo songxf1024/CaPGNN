@@ -40,7 +40,7 @@ def fix_seed(seed: int = 42):
 
 def sync_seed():
     '''
-    同步所有workers的随机种子
+    Synchronize random seeds of all workers
     '''
     if comm.get_rank() == 0:
         seed = int(time.time() % (2 ** 32 - 1))
@@ -70,12 +70,13 @@ def sync_model(model: nn.Module):
 
 def average_gradients(model: nn.Module):
     '''
-    average所有workers的梯度
+    Average the gradient of all workers
     '''
-    # print('\n'.join([f'Name: {name}, Shape: {param.shape}' for name, param in model.named_parameters() if param.requires_grad]))
     for name, param in model.named_parameters():
         if param.requires_grad:
-            comm.all_reduce_sum(param.grad.data)
+            # print(f"[{comm.get_rank()}] all_reduce {name} grad {param.grad.shape}")
+            # comm.all_reduce_sum(param.grad.data)
+            comm.ctx.hierarchical_allreduce(param.grad.data)
 
 
 def train_for_one_epoch(our,
@@ -97,29 +98,25 @@ def train_for_one_epoch(our,
     model.train()
     optimizer.zero_grad()
     # engine.ctx.timer.start('epoch')
-    # 前向传播
     # with torch.profiler.record_function('train_model'):
     # engine.ctx.timer.start('forward')
     if usecast:
         with autocast(True, dtype=torch.float16):
             # with engine.ctx.timer.record('forward'):
             logits = model(graph, input_data)
-            # 计算误差
             loss = criterion(logits[train_mask], labels[train_mask]) / total_num_training_samples
     else:
         # with engine.ctx.timer.record('forward'):
         logits = model(graph, input_data)
-        # 计算误差
         loss = criterion(logits[train_mask], labels[train_mask]) / total_num_training_samples
     # engine.ctx.timer.stop('forward')
 
-    # 反向传播
     # engine.ctx.timer.start('backward')
     # with engine.ctx.timer.record('backward'):
     if scaler: scaler.scale(loss).backward()
     else: loss.backward()
     # engine.ctx.timer.stop('backward')
-    # 获取所有workers的梯`度并更新
+    # Get the gradient of all workers and update
     # engine.ctx.timer.start('reduce_grad')
     with engine.ctx.timer.record('reduce_grad'):
         # with torch.profiler.record_function('reduce_grad'):
@@ -184,7 +181,7 @@ def get_metrics(labels: Tensor, logits: Tensor, is_F1):
 
 def aggregate_accuracy(loss: Tensor, metrics: List[Union[float, int]], epoch: int) -> str:
     '''
-    汇聚每个worker的metrics，以供评估
+    Gather each worker's metrics for evaluation
     '''
     metrics = torch.FloatTensor(metrics)
     comm.all_reduce_sum(metrics)

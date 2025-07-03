@@ -12,7 +12,8 @@ from ..manager import DecompGraph
 from ..manager import GraphEngine as engine
 
 class DistGCNConv(nn.Module):
-    '''DistGCNConv 层在前向和后向传递过程中传输1跳特征（嵌入）和梯度。
+    '''
+    DistGCNConv layer transmits 1-hop features (embedded) and gradients during forward and backward delivery
     https://github.com/dmlc/dgl/blob/master/python/dgl/nn/pytorch/conv/graphconv.py
     '''
 

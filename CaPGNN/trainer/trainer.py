@@ -27,18 +27,19 @@ class Trainer(object):
         # set runtime config
         runtime_args = vars(runtime_args)
         dataset = runtime_args['dataset']
+        self.server_num = runtime_args['server_num']
         # load offline config
         current_path = os.path.dirname(__file__)
-        # 这是自定义配置文件
+        # This is a custom configuration file
         offline_config_path = os.path.join(os.path.dirname(current_path), 'config', f'{dataset}.yaml')
         offline_config = yaml.load(open(offline_config_path, 'r', encoding='utf-8'), Loader=yaml.FullLoader)
-        # 这是公共配置文件
+        # This is a public configuration file
         offline_baseconfig_path = os.path.join(os.path.dirname(current_path), 'config', 'base.yaml')
         offline_baseconfig = yaml.load(open(offline_baseconfig_path, 'r', encoding='utf-8'), Loader=yaml.FullLoader)
 
-        # 根据运行时设置更新公共配置文件
+        # Update public configuration files according to runtime settings
         offline_baseconfig['runtime'].update(runtime_args)
-        # 将自定义配置文件中的值，合并或覆盖过来
+        # Merge or overwrite values in custom configuration files
         for key in offline_config:
             if key in offline_baseconfig:
                 offline_baseconfig[key].update(offline_config[key])
@@ -47,7 +48,7 @@ class Trainer(object):
         # set config
         self.config = offline_baseconfig
         runtime_config = self.config['runtime']
-        # 实验结果的输出路径
+        # The output path of the experimental results
         exp_path = runtime_config['exp_path']
         num_parts = runtime_config['num_parts']
         model_name = runtime_config['model_name']
@@ -61,18 +62,21 @@ class Trainer(object):
             mark = 'our_partition'
         else:
             mark = 'adaqp'
-        if runtime_args['use_pipeline']:
-            mark += '_pipe'
-        # exp_path = f'{exp_path}/{dataset}/{num_parts}part/{model_name}/{mark}'
-        exp_path = f'{exp_path}/{dataset}/{num_parts}part/{model_name}/{runtime_args["gpus"]}/{mark}'
+        if runtime_args['use_pipeline']: mark += '_pipe'
         self._n_layers = runtime_config["n_layers"]
         self.cache_size = runtime_config['gcache_size']
         # set up logger
         self.logger = setup_logger(f'trainer.log', log_level, with_file=True)
+        print('setup_logger done')
         # set up communicator
         self._set_communicator()
+        print('_set_communicator done')
         # set up graph engine
         self._set_engine(runtime_args, storage_server)
+        print('_set_engine done')
+
+        # exp_path = f'{exp_path}/{dataset}/{num_parts}part/{model_name}/{mark}'
+        exp_path = f'{exp_path}/{dataset}/{runtime_args["server_num"]}server/server{runtime_args["server_id"]}/{num_parts}part/{model_name}/{runtime_args["gpus"]}/{mark}'
         # set exp_path
         if not os.path.exists(exp_path) and comm.get_rank() == 0:
             os.makedirs(exp_path)
@@ -91,7 +95,7 @@ class Trainer(object):
 
     def _set_communicator(self):
         runtime_config = self.config['runtime']
-        self.communicator = comm(runtime_config['backend'], runtime_config['init_method'])
+        self.communicator = comm(runtime_config['backend'], runtime_config['init_method'], server_num=self.server_num)
         self.logger.info(repr(self.communicator))
 
 
@@ -160,35 +164,44 @@ class Trainer(object):
         # fetch needed config
         runtime_config = self.config['runtime']
         is_multilabel = self.config['data']['is_multilabel']
-        # 同步所有workers的随机种子
+        # Synchronize random seeds of all workers
+        # comm.barrier(group=comm.ctx.local_group)
+        # print(f"[{rank}] barrier done")
         sync_seed()
+        print(f"[{rank}] sync_seed done")
         self.model.reset_parameters()
         sync_model(self.model)
+        print(f"[{rank}] sync_model done")
+        # torch.cuda.synchronize()
+        # comm.barrier()
+        # print(f"[{rank}] barrier done")
 
         if runtime_config["reducer"]:
             self.engine.ctx.reducer.init(self.model)
-            # 为每个参数注册一个hook函数，在反向传播时被调用。允许在梯度被计算后、被优化器优化之前，对梯度进行操作
+            # Register a hook function for each parameter and is called when backpropagated. Allows operation on the gradient after it is calculated and before it is optimized by the optimizer.
             for i, (name, param) in enumerate(self.model.named_parameters()):
                 param.register_hook(self.reduce_hook(param, name, runtime_config["num_parts"]))
 
-        # 获取训练所需的参数
+        # Get the parameters required for training
         epoches = runtime_config['num_epoches']
         input_data = self.engine.ctx.feats
         labels = self.engine.ctx.labels
         train_mask = self.engine.ctx.train_mask
         val_mask = self.engine.ctx.val_mask
         test_mask = self.engine.ctx.test_mask
-        # 获得总的节点数
+        # Get the total number of nodes
         total_number_nodes = torch.LongTensor([train_mask.numel()])
-        comm.all_reduce_sum(total_number_nodes)
-        # 获取reduce后的结果
+        # comm.barrier(group=comm.ctx.local_group)
+        comm.all_reduce_sum(total_number_nodes, group=comm.ctx.local_group)
+        print(f"[{rank}] all_reduce_sum done")
+        # Get the result after reducing
         total_number_nodes = total_number_nodes.item()
-        # 设置优化器
+        # Setting up the optimizer
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=runtime_config['learning_rate'], weight_decay=runtime_config['weight_decay'], amsgrad=True)
         scheduler = None if not runtime_config["scheduler"] else torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.95, patience=5, min_lr=1e-6, verbose=True)
 
         scaler = None if not runtime_config["scaler"] else GradScaler()
-        # 设置损失函数
+        # Set the loss function
         if is_multilabel:
             criterion = torch.nn.BCEWithLogitsLoss(reduction='sum')
             labels = labels.float()
@@ -202,7 +215,7 @@ class Trainer(object):
         our = self.config['runtime']['our_cache'] or self.config['runtime']['our_partition']
         if runtime_config['pretrain']:
             torch.cuda.synchronize()
-            torch.distributed.barrier()
+            comm.barrier()
             engine.ctx.timer.pretrain = True
             for epoch in tqdm(range(0, 20), desc=f'warmup-train', ncols=100):
                 train_for_one_epoch(our, epoch, engine.ctx.graph,
@@ -212,9 +225,9 @@ class Trainer(object):
                                     self.config['runtime']['reducer'],
                                     self.config['runtime']['usecast'])
                 engine.ctx.curr_epoch += 1
-            torch.cuda.synchronize()
-            torch.distributed.barrier()
             engine.ctx.timer.pretrain = False
+        torch.cuda.synchronize()
+        comm.barrier()
         torch.cuda.reset_peak_memory_stats()
         best_record = {"train_acc": 0,"val_acc": 0,"test_acc": 0,"loss": 1e6}
         # the fixed staleness threshold, can be adjusted as needed, -1 indicating unbounded staleness
@@ -235,7 +248,7 @@ class Trainer(object):
             engine.ctx.timer.is_train = False
             staleness_counter += 1
             need_sync = (STALENESS_THRESHOLD > 0) and (staleness_counter >= STALENESS_THRESHOLD)
-            # 验证和测试，可以在不需要计时的时候取消
+            # Verification and testing can be canceled when no timer is required
             if self.config['runtime']['eval']:
                 epoch_metrics = val_test(engine.ctx.graph, self.model, input_data, labels, train_mask, val_mask, test_mask, is_multilabel)
                 metrics_val, loss_val, metrics_info = aggregate_accuracy(loss, epoch_metrics, epoch) if not is_multilabel else aggregate_F1(loss, epoch_metrics, epoch)
@@ -251,22 +264,22 @@ class Trainer(object):
                 best_record["val_acc"] = max(best_record["val_acc"], metrics_val[1])
                 best_record["test_acc"] = max(best_record["test_acc"], metrics_val[2])
                 best_record["loss"] = min(best_record["loss"], loss_val)
-                # 打印训练信息
+                # Print training information
                 if epoch % runtime_config['log_steps']==0:
-                    if comm.get_rank() == 0:
+                    if comm.ctx.local_rank == 0:
                         print(f'{epoch}/{epoches}')
                         print(metrics_info)
                         print(best_record)
                     comm.barrier()
             else:
-                if epoch % runtime_config['log_steps'] == 0 and comm.get_rank() == 0:
+                if epoch % runtime_config['log_steps'] == 0 and comm.ctx.local_rank == 0:
                     print(f'{epoch}/{epoches}')
             #         if runtime_config["swanlab"]: swanlab.log({f"loss_{rank}": loss.item()})
             #         print(f'Loss {loss.item():.4f}')
             # prof.step()
             # engine.ctx.timer.is_train = True
-            # torch.cuda.synchronize() # 测cache hit时候才打开！!!!!!!!!!!!!
-            # comm.barrier()           # 测cache hit时候才打开！!!!!!!!!!!!!
+            # torch.cuda.synchronize() # only open when test the cache hit!
+            # comm.barrier()           # only open when test the cache hit!
             # if comm.get_rank() == 0: print('#' * 50)
 
             # perform a forced synchronization operation
@@ -287,7 +300,7 @@ class Trainer(object):
         aggregation = engine.ctx.timer.peak_item('aggregation', TimerKeys.TOTAL) or 0
         cpu_time_ave = cpu_time_total = gpu_time_ave = gpu_time_total = 0
         # if comm.get_rank() == 0:
-        # 遍历性能分析结果列表，找到名称为'train_epoch'的记录对应的条目
+        # Iterate through the performance analysis results list and find the entry corresponding to the record named 'train_epoch'
         if prof:
             prof_results = prof.key_averages()
             cpu_time_ave = cpu_time_total = gpu_time_ave = gpu_time_total = 0
@@ -338,7 +351,8 @@ class Trainer(object):
                                      'mm', 'aggregation', 'cpu_time_ave', 'cpu_time_total',
                                      'gpu_time_ave', 'gpu_time_total'])
                 for worker in tqdm(range(comm.get_world_size()), desc='写入csv中...'):
-                    device_name = torch.cuda.get_device_name(worker)
+                    # device_name = torch.cuda.get_device_name(worker)
+                    device_name = worker
                     write_data = [f'Worker {worker}', device_name]
                     write_data.extend(obj_list[worker].numpy())
                     writer.writerow(write_data)

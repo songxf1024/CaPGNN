@@ -1,49 +1,56 @@
 import tools
 
-if tools.outer_ip == '229':
-    ## 229
-    gpu_info = {
-        # id:  memory,  spmm,    mm,    H2D,    D2H,    D2D
-        2: (24 * 1024, 0.1069, 0.1389, 0.1198, 0.1207, 0.0014),  # RTX 3090
-        3: (24 * 1024, 0.1060, 0.1372, 0.1188, 0.1198, 0.0014),  # RTX 3090
-        4: (24 * 1024, 0.1072, 0.1393, 0.1224, 0.1242, 0.0014),  # RTX 3090
-        7: (24 * 1024, 0.1058, 0.1385, 0.1194, 0.1208, 0.0014),  # RTX 3090
-        5: (8  * 1024, 0.2934, 0.4942, 0.1188, 0.1186, 0.0033),  # RTX 2060
-        6: (8  * 1024, 0.2975, 0.5002, 0.1195, 0.1204, 0.0033),  # RTX 2060
-    }
-    gpu_capability = {
-     # id: memory, (spmm/max(spmm), mm/max(mm), H2D/max, D2H/max, D2D/max)
-        2: [24*1024, None, None, None, None, None],  # RTX 3090
-        3: [24*1024, None, None, None, None, None],  # RTX 3090
-        4: [24*1024, None, None, None, None, None],  # RTX 3090
-        7: [24*1024, None, None, None, None, None],  # RTX 3090
-        5: [ 8*1024, None, None, None, None, None],  # RTX 2060
-        6: [ 8*1024, None, None, None, None, None],  # RTX 2060
-    }
-elif tools.outer_ip == '228':
-    ## 228
-    gpu_info = {
-        # id:  memory,  spmm,    mm,    H2D,    D2H,    D2D
-        0: (24 * 1024, 0.1067, 0.1409, 0.1184, 0.1217, 0.0014),  # RTX 3090
-        1: (12 * 1024, 0.1948, 0.3393, 0.1223, 0.1240, 0.0038),  # RTX 3060
-        2: (24 * 1024, 0.1054, 0.1351, 0.1196, 0.1207, 0.0014),  # RTX 3090
-        3: (12 * 1024, 0.1975, 0.3485, 0.1217, 0.1232, 0.0038),  # RTX 3060
-        4: (48 * 1024, 0.1195, 0.1416, 0.1175, 0.1184, 0.0021),  # Tesla A40
-        5: ( 6 * 1024, 0.3370, 0.9791, 0.1220, 0.1232, 0.0057),  # GTX 1660 Ti
-        6: (48 * 1024, 0.1201, 0.1426, 0.1198, 0.1193, 0.0021),  # Tesla A40
-        7: ( 6 * 1024, 0.3447, 1.0084, 0.1255, 0.1256, 0.0057),  # GTX 1660Ti
-    }
-    gpu_capability = {
-     # id: memory(MB), (spmm/max(spmm), mm/max(mm), H2D/max, D2H/max, D2D/max)
-        0: [24*1024, None, None, None, None, None],  # RTX 3090
-        1: [12*1024, None, None, None, None, None],  # RTX 3060
-        2: [24*1024, None, None, None, None, None],  # RTX 3090
-        3: [12*1024, None, None, None, None, None],  # RTX 3060
-        4: [48*1024, None, None, None, None, None],  # Tesla A40
-        5: [ 6*1024, None, None, None, None, None],  # GTX 1660 Ti
-        6: [48*1024, None, None, None, None, None],  # Tesla A40
-        7: [ 6*1024, None, None, None, None, None],  # GTX 1660Ti
-    }
+all_servers = ['228', '229']
+gpu_info = None
+gpu_capability = None
+
+def init_gpus(server_id):
+    global gpu_info, gpu_capability
+    # if tools.outer_ip == '229':
+    if all_servers[server_id] == '229':
+        ## 229
+        gpu_info = {
+            # id:  memory,  spmm,    mm,    H2D,    D2H,    D2D
+            2: (24 * 1024, 0.1069, 0.1389, 0.1198, 0.1207, 0.0014),  # RTX 3090
+            3: (24 * 1024, 0.1060, 0.1372, 0.1188, 0.1198, 0.0014),  # RTX 3090
+            4: (24 * 1024, 0.1072, 0.1393, 0.1224, 0.1242, 0.0014),  # RTX 3090
+            7: (24 * 1024, 0.1058, 0.1385, 0.1194, 0.1208, 0.0014),  # RTX 3090
+            5: (8  * 1024, 0.2934, 0.4942, 0.1188, 0.1186, 0.0033),  # RTX 2060
+            6: (8  * 1024, 0.2975, 0.5002, 0.1195, 0.1204, 0.0033),  # RTX 2060
+        }
+        gpu_capability = {
+         # id: memory, (spmm/max(spmm), mm/max(mm), H2D/max, D2H/max, D2D/max)
+            2: [24*1024, None, None, None, None, None],  # RTX 3090
+            3: [24*1024, None, None, None, None, None],  # RTX 3090
+            4: [24*1024, None, None, None, None, None],  # RTX 3090
+            7: [24*1024, None, None, None, None, None],  # RTX 3090
+            5: [ 8*1024, None, None, None, None, None],  # RTX 2060
+            6: [ 8*1024, None, None, None, None, None],  # RTX 2060
+        }
+    elif all_servers[server_id] == '228':
+        ## 228
+        gpu_info = {
+            # id:  memory,  spmm,    mm,    H2D,    D2H,    D2D
+            0: (24 * 1024, 0.1067, 0.1409, 0.1184, 0.1217, 0.0014),  # RTX 3090
+            1: (12 * 1024, 0.1948, 0.3393, 0.1223, 0.1240, 0.0038),  # RTX 3060
+            2: (24 * 1024, 0.1054, 0.1351, 0.1196, 0.1207, 0.0014),  # RTX 3090
+            3: (12 * 1024, 0.1975, 0.3485, 0.1217, 0.1232, 0.0038),  # RTX 3060
+            4: (48 * 1024, 0.1195, 0.1416, 0.1175, 0.1184, 0.0021),  # Tesla A40
+            5: ( 6 * 1024, 0.3370, 0.9791, 0.1220, 0.1232, 0.0057),  # GTX 1660 Ti
+            6: (48 * 1024, 0.1201, 0.1426, 0.1198, 0.1193, 0.0021),  # Tesla A40
+            7: ( 6 * 1024, 0.3447, 1.0084, 0.1255, 0.1256, 0.0057),  # GTX 1660Ti
+        }
+        gpu_capability = {
+         # id: memory(MB), (spmm/max(spmm), mm/max(mm), H2D/max, D2H/max, D2D/max)
+            0: [24*1024, None, None, None, None, None],  # RTX 3090
+            1: [12*1024, None, None, None, None, None],  # RTX 3060
+            2: [24*1024, None, None, None, None, None],  # RTX 3090
+            3: [12*1024, None, None, None, None, None],  # RTX 3060
+            4: [48*1024, None, None, None, None, None],  # Tesla A40
+            5: [ 6*1024, None, None, None, None, None],  # GTX 1660 Ti
+            6: [48*1024, None, None, None, None, None],  # Tesla A40
+            7: [ 6*1024, None, None, None, None, None],  # GTX 1660Ti
+        }
 
 def cal_gpus_capability(all_gpus_list):
     global gpu_capability
@@ -67,11 +74,12 @@ def cal_gpus_capability(all_gpus_list):
     return gpu_capability
 
 
-# GPU的计算能力。由spmm和mm体现
+# GPU computing power. Embodied by spmm and mm
 def get_gpu_capability(gpus_list, alpha=0.5, reverse=True):
-    # 计算指标 spmm/max(spmm) + mm/max(mm) 并存储在字典中
+    # Calculate the spmm/max(spmm) + mm/max(mm) and store it in the dict
     indicators = {gpu_id: gpu_capability[gpu_id][1]*alpha+gpu_capability[gpu_id][1]*(1-alpha) for gpu_id in gpus_list}
-    # 按指标值降序排序，并获取对应的GPU设备key。值越大，计算成本越大，GPU越弱。
+    # Sort by indices value descending order and get the corresponding GPU device key.
+    # The larger the value, the greater the calculation cost and the weaker the GPU.
     sorted_gpu_ids = sorted(gpus_list, key=lambda x: indicators[x], reverse=reverse)
     return sorted_gpu_ids
 

@@ -19,7 +19,7 @@ class Recorder(object):
 
     def display_final_statistics(self, metrics_file:str = None, val_metric_curve_file: str = None, model_name='gcn'):
         '''
-        显示并存储有关训练/评估/测试指标的统计信息
+        Display and store statistics regarding training/evaluation/testing metrics.
         '''
         result = self.epoches_metrics
         result[:,:3] = 100 * result[:,:3]

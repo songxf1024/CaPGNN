@@ -93,9 +93,9 @@ class DistTimer:
             if len(data) > 1:
                 avg_dict[key], std_dict[key] = statistics.mean(data), statistics.pstdev(data)
             elif len(data) == 1:
-                avg_dict[key], std_dict[key] = data[0], 0.0  # 如果只有一个数据点，标准差为0
+                avg_dict[key], std_dict[key] = data[0], 0.0  # If there is only one data point, the standard deviation is 0.
             else:
-                avg_dict[key], std_dict[key] = float('nan'), float('nan')  # 没有数据点，设置为NaN
+                avg_dict[key], std_dict[key] = float('nan'), float('nan')  # No data point, set to NaN.
             summary_list.append({
                 'key': key,
                 'total': self.duration_dict[key],

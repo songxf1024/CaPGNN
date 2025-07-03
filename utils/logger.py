@@ -34,7 +34,8 @@ class DistLogger:
                     continue
 
     def log(self, *args, oneline=False, rank=-1, prefix='', suffix='', show=False, save_log=False):
-        '''太多log输出会影响rank 0的计时精度，建议平时关闭，只在必要的时候通过show=True来打开'''
+        '''Too many log outputs will affect the timing accuracy of rank 0.
+        It is recommended to keep it off during regular use and only turn it on with show=True when necessary.'''
         if not show and self.env.rank!=rank: return  # or rank!=-1
 
         head = f'{dt.datetime.now().time()} [{self.env.rank}] '
@@ -57,7 +58,7 @@ class DistLogger:
         with open(csv_file, 'w+', newline='') as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             if not file_exists:
-                writer.writeheader()  # 仅在文件不存在时写入表头
+                writer.writeheader()  # Write the header only when the file does not exist.
             for row in summary:
                 writer.writerow(row)
 

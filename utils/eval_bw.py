@@ -11,7 +11,7 @@ def measure_bandwidth(env, sz_tag, size, repeat, mode='IDT'):
 
     if mode == 'IDT':
         d2_data = torch.randn(size, dtype=torch.float32, device=env.device)
-        for _ in range(5): d2_data.copy_(d_data) # 预热5次
+        for _ in range(5): d2_data.copy_(d_data)
         torch.cuda.synchronize()
         
         for i in range(repeat):
@@ -25,7 +25,7 @@ def measure_bandwidth(env, sz_tag, size, repeat, mode='IDT'):
             env.logger.log(f'IDT {sz_tag} {i + 1}/{repeat}', oneline=True, rank=0, show=True)
         env.logger.log(f'', rank=0, show=True)
     elif mode == 'H2D':
-        for _ in range(5): d_data.copy_(h_data) # 预热5次
+        for _ in range(5): d_data.copy_(h_data)
         torch.cuda.synchronize()
         
         for i in range(repeat):

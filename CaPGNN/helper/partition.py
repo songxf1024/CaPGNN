@@ -25,7 +25,7 @@ def process_obg_dataset(dataset: str, raw_dir: str):
     # elif dataset in ['ogbg-molhiv', ]:
     #     data = DglGraphPropPredDataset(name=dataset, root=raw_dir)
     else:
-        print('该数据集暂不支持')
+        print('This dataset is not yet supported')
         return None
     graph, labels = data[0]
     labels = labels[:, 0]
@@ -89,10 +89,16 @@ def get_friendster(raw_dir, format=None):
         print("complete")
     return g
 
-def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'dataset', part_dir: str = 'part_data', num_hops=1, part_method='metis'):
+def graph_patition_store(dataset:str, partition_size:int,
+                         raw_dir:str = 'dataset', part_dir:str = 'part_data',
+                         num_hops=1, part_method='metis',
+                         server_num=1, server_gpus=None):
     '''
-    对数据集进行分区并存储
+    Partition and store the dataset
     we set HALO hop as 1 to save cross-device neighboring nodes' indices for constructing send/recv idx.
+
+    If server_num > 1, it indicates that there are multiple servers,
+    and server_gpus example [2, 4] means that server 1 has 2 GPUs and server 2 has 4 GPUs.
     '''
     dgl_dataset_map = {
         'reddit': dgl.data.RedditDataset,                            # Nodes: 232965, Edges: 114615892, Classes: 41, Dim: 602
@@ -116,25 +122,21 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
         'wikidata5M': torch_geometric.datasets.Wikidata5M,
     }
 
-    # the dir to store graph partition
-    partition_dir = '{}/{}/{}part'.format(part_dir, dataset, partition_size)
-    # if os.path.exists(partition_dir):
-    #     return
     if 'ogb' in dataset:
-        # OGB的数据集需要处理一下
+        # OGB dataset needs to be processed
         graph = process_obg_dataset(dataset, raw_dir)
     elif dataset == 'yelp':
-        # PyG的数据集更需要处理一下
+        # PyG dataset needs to be processed
         # data = torch_geometric.datasets.Yelp(root=os.path.join(raw_dir, dataset))
         data = dgl_dataset_map[dataset](raw_dir=raw_dir)
         graph = load_yelp(raw_dir=raw_dir)
     elif dgl_dataset_map.get(dataset):
-        # DGL的数据集都可以直接用
+        # All DGL datasets can be used directly
         data = dgl_dataset_map[dataset](raw_dir=raw_dir)
         graph = data[0]
-        # 如果没有提供mask，就需要手动随机生成
+        # If no mask is provided, it is necessary to generate it manually randomly
         if graph.ndata.get('train_mask') is None:
-            print('>> 这里手动生成了mask，可能会有问题，请注意!')
+            print('>> The mask is generated manually here, there may be problems, please note!')
             n = graph.number_of_nodes()
             n_train = int(n * 0.7)
             n_val = int(n * 0.2)
@@ -154,16 +156,16 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
             # num_nodes = graph.number_of_nodes()
             # train_size = int(num_nodes * 0.7)
             # val_size = int(num_nodes * 0.2)
-            # # 随机打乱节点索引
+            # # Randomly disrupt node index
             # perm = torch.randperm(num_nodes)
-            # # 生成掩码
+            # # Generate mask
             # train_mask = torch.zeros(num_nodes, dtype=torch.bool)
             # val_mask = torch.zeros(num_nodes, dtype=torch.bool)
             # test_mask = torch.zeros(num_nodes, dtype=torch.bool)
             # train_mask[perm[:train_size]] = True
             # val_mask[perm[train_size:train_size + val_size]] = True
             # test_mask[perm[train_size + val_size:]] = True
-            # # 将掩码添加到图的节点数据中
+            # # Add mask to the node data of the graph
             # graph.ndata['train_mask'] = train_mask
             # graph.ndata['val_mask'] = val_mask
             # graph.ndata['test_mask'] = test_mask
@@ -180,40 +182,66 @@ def graph_patition_store(dataset: str, partition_size: int, raw_dir: str = 'data
     graph.edata.clear()
     graph = dgl.remove_self_loop(graph)
     graph = dgl.add_self_loop(graph)
-    # save global degrees
-    in_degrees = graph.in_degrees()
-    out_degrees = graph.out_degrees()
-    save_dir = f'{partition_dir}/graph_degrees'
-    if not os.path.exists(save_dir): os.makedirs(save_dir)
-    torch.save(in_degrees, f'{save_dir}/in_degrees.pt')
-    torch.save(out_degrees, f'{save_dir}/out_degrees.pt')
-    print(f'<save degrees: {save_dir}>')
     # partition the whole graph
     print('<begin partition...>')
-    orig_ids = dgl.distributed.partition_graph(graph,
-                                               graph_name=dataset,
-                                               part_method=part_method,
-                                               num_parts=partition_size,
-                                               out_path=partition_dir,
-                                               num_hops=num_hops,
-                                               return_mapping=True)
-    # torch.save(orig_ids[0], f'{save_dir}/orig_id_nodes.pt')
-    # torch.save(orig_ids[1], f'{save_dir}/orig_id_edges.pt')
-    # metis_partitions = dgl.metis_partition(graph, k=partition_size, extra_cached_hops=0, reshuffle=True,
-    #                                        balance_ntypes=None, balance_edges=False, mode="k-way")
-    # # Save each partition to disk
-    # for part_id, part_graph in metis_partitions.items():
-    #     part_filename = os.path.join(partition_dir, f'part{part_id}.dgl')
-    #     dgl.save_graphs(part_filename, part_graph)
+    partition_dir = '{}/{}/{}server'.format(part_dir, dataset, server_num)
 
-    # print('load')
-    # partitions = []
-    # for part_id in range(2):
-    #     # part_filename = os.path.join(partition_dir, f'part{part_id}.dgl')
-    #     part_filename = os.path.join(partition_dir, f'part0/graph.dgl')
-    #     part_graphs, _ = dgl.load_graphs(part_filename)
-    #     partitions.append(part_graphs[0])
-    #     print(part_graphs)
+    if server_num > 1:
+        metis_partitions = dgl.metis_partition(graph, k=server_num, extra_cached_hops=0, reshuffle=True,
+                                               balance_ntypes=None, balance_edges=False, mode="k-way")
+        for part_id, part_graph in metis_partitions.items():
+            part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
+            orig_id = part_graph.ndata['_ID']
+            part_graph.ndata['test_mask'] = graph.ndata['test_mask'][orig_id]
+            part_graph.ndata['val_mask'] = graph.ndata['val_mask'][orig_id]
+            part_graph.ndata['train_mask'] = graph.ndata['train_mask'][orig_id]
+            part_graph.ndata['label'] = graph.ndata['label'][orig_id]
+            part_graph.ndata['feat'] = graph.ndata['feat'][orig_id]
+
+            dgl.save_graphs(part_filename, part_graph)
+        # TODO: This can be processed in parallel.
+        partitions = []
+        for part_id in range(server_num):
+            gpu_num = server_gpus[part_id]
+            part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
+            subpartition_dir = os.path.join(partition_dir, f'server{part_id}', f'{gpu_num}part')
+            part_graphs = dgl.load_graphs(part_filename)[0][0]
+            # save global degrees
+            in_degrees = part_graphs.in_degrees()
+            out_degrees = part_graphs.out_degrees()
+            save_dir = f'{subpartition_dir}/graph_degrees'
+            if not os.path.exists(save_dir): os.makedirs(save_dir)
+            torch.save(in_degrees, f'{save_dir}/in_degrees.pt')
+            torch.save(out_degrees, f'{save_dir}/out_degrees.pt')
+            print(f'<save degrees: {save_dir}>')
+            orig_ids = dgl.distributed.partition_graph(part_graphs,
+                                                       graph_name=dataset,
+                                                       part_method=part_method,
+                                                       num_parts=gpu_num,
+                                                       out_path=subpartition_dir,
+                                                       num_hops=num_hops,
+                                                       return_mapping=True)
+    else:
+        # the dir to store graph partition
+        partition_dir = f'{partition_dir}/server0/{partition_size}part'
+        # save global degrees
+        in_degrees = graph.in_degrees()
+        out_degrees = graph.out_degrees()
+        save_dir = f'{partition_dir}/graph_degrees'
+        if not os.path.exists(save_dir): os.makedirs(save_dir)
+        torch.save(in_degrees, f'{save_dir}/in_degrees.pt')
+        torch.save(out_degrees, f'{save_dir}/out_degrees.pt')
+        print(f'<save degrees: {save_dir}>')
+        orig_ids = dgl.distributed.partition_graph(graph,
+                                                   graph_name=dataset,
+                                                   part_method=part_method,
+                                                   num_parts=partition_size,
+                                                   out_path=partition_dir,
+                                                   num_hops=num_hops,
+                                                   return_mapping=True)
+        # torch.save(orig_ids[0], f'{save_dir}/orig_id_nodes.pt')
+        # torch.save(orig_ids[1], f'{save_dir}/orig_id_edges.pt')
+
 
 
 if __name__ == '__main__':

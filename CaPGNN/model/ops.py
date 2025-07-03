@@ -26,12 +26,12 @@ def GCN_aggregation(graph: DGLHeteroGraph,
         if not allow_zero_in_degree:
             if (graph.in_degrees() == 0).any():
                 raise DGLError(
-                    "图中存在 0-in-degree 节点，这些节点的输出将无效。这对某些应用是有害的，会导致性能下降。"
-                    "调用g = dgl.add_self_loop(g)，在输入图上添加自循环，就能解决这个问题。在构建此模"
-                    "块时，将allow_zero_in_degree设置为True，将抑制检查并让代码运行。调用"
-                    "add_self_loop对某些图将不起作用，例如异构图，因为无法确定 self_loop 边的边类型。"
-                    "在这种情况下，请将 allow_zero_in_degree 设置为 True，以解除代码阻塞并手动处理零度节点。"
-                    "处理这种情况的常用方法是在 conv 之后使用时过滤掉带有 zero-in-degree 的节点。"
+                    "There are 0-in-degree nodes in the graph, and the output of these nodes will be invalid. This is harmful to some applications and will cause performance degradation." 
+                    "Call g = dgl.add_self_loop(g) and add a self-loop on the input graph to solve this problem. When building this model "
+                    " block, setting allow_zero_in_degree to True will suppress the check and let the code run. Calling " 
+                    "add_self_loop will not work for some graphs, such as heterogeneous graphs, because the edge type of self_loop edge cannot be determined." 
+                    "In this case, set allow_zero_in_degree to True to unblock the code and manually handle the zero-degree node." 
+                    "The common way to handle this is to filter out zero-in-degree when used after conv node. "
                 )
         # if dgl.__version__ < '0.10':
         #     aggregate_fn = fn.copy_src('h', 'm')  # dgl v0.9
@@ -94,7 +94,7 @@ def SAGE_aggregation(graph: DGLHeteroGraph, feats: Tensor, mode: ProprogationMod
 
 class DistAggConv(Function):
     '''
-    定制的分布式聚合函数类，可以让GCN聚合本地和远程邻居的特征。
+    Custom distributed aggregation function class allows GCN to aggregate local and remote neighbor features.
     '''
     @staticmethod
     @custom_fwd
@@ -148,7 +148,7 @@ def full_graph_propagation(ctx,
                            mode: ProprogationMode,
                            class_name: str) -> Union[Tensor, Tuple[Tensor, None, None, None]]:
     # exchange messages (features/embeddings/embedding gradients)
-    # 本地graph上的所有halo特征，注意cat了，所以是一维的，需要搭配用于标注起止范围的send_idx一起使用
+    # All halo features on the local graph, pay attention to cat, so they are one-dimensional and need to be used with send_idx used to mark the start and end range.
     # torch.cuda.current_stream().synchronize()
     send_messages = local_messages[engine.ctx.total_send_idx]
     name = f'forward{layer}' if mode == ProprogationMode.Forward else f'backward{layer}'
@@ -161,7 +161,8 @@ def full_graph_propagation(ctx,
         # remote_messages = response.get()
         full_messages = torch.cat([local_messages, remote_messages], dim=0)
     else:
-        rank, size = comm.get_rank(), comm.get_world_size()
+        # rank, size = comm.get_rank(), comm.get_world_size()
+        rank, size = comm.ctx.local_rank, comm.get_local_world_size()
         if engine.ctx.curr_epoch > 0:
             # if is_train: engine.ctx.timer.start(f'msg_comm')
             with engine.ctx.timer.record('msg_comm'):
@@ -184,7 +185,7 @@ def full_graph_propagation(ctx,
             raise ValueError(f'Invalid class_name {class_name}')
     # engine.ctx.timer.stop('aggregation')
     len_local = local_messages.shape[0]
-    # 从聚合结果rst中提取本地消息的部分
+    # Extract the part of the local message from the aggregate result rst
     return_messages = rst[:len_local]
     # store layer info in forward propagation 
     if mode == ProprogationMode.Forward:
