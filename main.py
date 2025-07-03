@@ -123,25 +123,25 @@ if __name__ == '__main__':
 
     # ------------Parameter Main Definition Area---------------- #
     '''
-        // 两台服务器上的GPU不同，其他配置相同
+        // The GPUs on the two servers are different, and the other configurations are the same
         228: 
-        GPU索引: 0, GPU名称: NVIDIA GeForce RTX 3090, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processnt=82)
-        GPU索引: 1, GPU名称: NVIDIA GeForce RTX 3060, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3060', major=8, minor=6, total_memory=12044MB, multi_processnt=28)
-        GPU索引: 2, GPU名称: NVIDIA GeForce RTX 3090, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processnt=82)
-        GPU索引: 3, GPU名称: NVIDIA GeForce RTX 3060, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3060', major=8, minor=6, total_memory=12044MB, multi_processnt=28)
-        GPU索引: 4, GPU名称: NVIDIA A40, GPU属性: _CudaDeviceProperties(name='NVIDIA A40', major=8, minor=6, total_memory=45416MB, multi_processor_count=84)
-        GPU索引: 5, GPU名称: NVIDIA GeForce GTX 1660 Ti, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce GTX 1660 Ti', major=7, minor=5, total_memory=5936MB, multi_prr_count=24)
-        GPU索引: 6, GPU名称: NVIDIA A40, GPU属性: _CudaDeviceProperties(name='NVIDIA A40', major=8, minor=6, total_memory=45416MB, multi_processor_count=84)
-        GPU索引: 7, GPU名称: NVIDIA GeForce GTX 1660 Ti, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce GTX 1660 Ti', major=7, minor=5, total_memory=5936MB, multi_prr_count=24)
+        0, NVIDIA GeForce RTX 3090, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processnt=82)
+        1, NVIDIA GeForce RTX 3060, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3060', major=8, minor=6, total_memory=12044MB, multi_processnt=28)
+        2, NVIDIA GeForce RTX 3090, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processnt=82)
+        3, NVIDIA GeForce RTX 3060, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3060', major=8, minor=6, total_memory=12044MB, multi_processnt=28)
+        4, NVIDIA A40, _CudaDeviceProperties(name='NVIDIA A40', major=8, minor=6, total_memory=45416MB, multi_processor_count=84)
+        5, NVIDIA GeForce GTX 1660 Ti, _CudaDeviceProperties(name='NVIDIA GeForce GTX 1660 Ti', major=7, minor=5, total_memory=5936MB, multi_prr_count=24)
+        6, NVIDIA A40, _CudaDeviceProperties(name='NVIDIA A40', major=8, minor=6, total_memory=45416MB, multi_processor_count=84)
+        7, NVIDIA GeForce GTX 1660 Ti, _CudaDeviceProperties(name='NVIDIA GeForce GTX 1660 Ti', major=7, minor=5, total_memory=5936MB, multi_prr_count=24)
         229:
-        GPU索引: 0, GPU名称: NVIDIA GeForce GTX 1650, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce GTX 1650', major=7, minor=5, total_memory=3902MB, multi_processor_count=14)
-        GPU索引: 1, GPU名称: NVIDIA GeForce GTX 1650, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce GTX 1650', major=7, minor=5, total_memory=3902MB, multi_processor_count=14)
-        GPU索引: 2, GPU名称: NVIDIA GeForce RTX 3090, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
-        GPU索引: 3, GPU名称: NVIDIA GeForce RTX 3090, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
-        GPU索引: 4, GPU名称: NVIDIA GeForce RTX 3090, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
-        GPU索引: 5, GPU名称: NVIDIA GeForce RTX 2060 SUPER, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 2060 SUPER', major=7, minor=5, total_memory=7974MB, multi_processor_count=34)
-        GPU索引: 6, GPU名称: NVIDIA GeForce RTX 2060 SUPER, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 2060 SUPER', major=7, minor=5, total_memory=7974MB, multi_processor_count=34)
-        GPU索引: 7, GPU名称: NVIDIA GeForce RTX 3090, GPU属性: _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
+        0, NVIDIA GeForce GTX 1650, _CudaDeviceProperties(name='NVIDIA GeForce GTX 1650', major=7, minor=5, total_memory=3902MB, multi_processor_count=14)
+        1, NVIDIA GeForce GTX 1650, _CudaDeviceProperties(name='NVIDIA GeForce GTX 1650', major=7, minor=5, total_memory=3902MB, multi_processor_count=14)
+        2, NVIDIA GeForce RTX 3090, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
+        3, NVIDIA GeForce RTX 3090, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
+        4, NVIDIA GeForce RTX 3090, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
+        5, NVIDIA GeForce RTX 2060 SUPER, _CudaDeviceProperties(name='NVIDIA GeForce RTX 2060 SUPER', major=7, minor=5, total_memory=7974MB, multi_processor_count=34)
+        6, NVIDIA GeForce RTX 2060 SUPER, _CudaDeviceProperties(name='NVIDIA GeForce RTX 2060 SUPER', major=7, minor=5, total_memory=7974MB, multi_processor_count=34)
+        7, NVIDIA GeForce RTX 3090, _CudaDeviceProperties(name='NVIDIA GeForce RTX 3090', major=8, minor=6, total_memory=24259MB, multi_processor_count=82)
     '''
     gpu_groups          = {
         '228': [
