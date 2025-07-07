@@ -3,7 +3,6 @@
 ## Directory Hierarchy
 ```
 |-- CaPGNN
-|   `-- assigner
 |   `-- communicator
 |   `-- config            # offline configurations of experiments
 |   `-- helper
