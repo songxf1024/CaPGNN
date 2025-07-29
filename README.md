@@ -1,5 +1,7 @@
 # Optimizing Parallel Graph Neural Network Training with Joint Caching and Resource-Aware Graph Partitioning
 
+<div align="center"><img src="https://github.com/user-attachments/assets/06f1ba1c-5e79-4e2c-a3d2-7101ae8f0ae2"/></div>   
+
 ## Directory Hierarchy
 ```
 |-- CaPGNN
@@ -27,20 +29,46 @@
 - DGL 2.3.0
 
 #### Hardware Dependencies
+> The following configurations are recommended and not mandatory.
+
 - CPU: dual-core Intel® Xeon® Gold 6230
 - RAM: 768GB 
-- GPUs: 2 NVIDIA Tesla A40, 2 NVIDIA RTX 3090, 2 NVIDIA RTX 3060, 2 NVIDIA GTX 1660Ti.
+- GPUs: 2x NVIDIA Tesla A40, 2x NVIDIA RTX 3090, 2x NVIDIA RTX 3060, 2x NVIDIA GTX 1660Ti.
 - PCIe 3.0 x16
 
-### Dataset
+### Installation
+Running the following commands will create the virtual environment and install the dependencies. `conda` can be downloaded from [anaconda](https://www.anaconda.com/download/success). 
+```bash
+conda clean --all -y
+pip cache purge
+conda create -n capgnn python=3.9.12
+conda activate capgnn
+
+pip install -r requirements.txt \
+  --extra-index-url https://download.pytorch.org/whl/cu121 \
+  -f https://data.dgl.ai/wheels/torch-2.3/cu121/repo.html \
+  -f https://data.pyg.org/whl/torch-2.3.0+cu121.html
+  
+```
+
+> Note that the version of DGL must be compatible with the corresponding [PyTorch version](https://www.dgl.ai/pages/start.html) and [Python version](https://www.dgl.ai/dgl_docs/install/index.html).  
+> Additionally, if you have a GPU, the PyTorch version must also match your [CUDA version](https://pytorch.org/get-started/previous-versions/).
+
+
+### Datasets
 > Datasets will be downloaded automatically if they are missing.
-- CoraFull
-- Flickr
-- CoauthorPhysics
-- Reddit
-- Yelp
-- AmazonProducts
-- ogbn-products
+
+| Dataset             | \|V\|    | \|E\|      | f\_dim | Classes |
+| ------------------- | :------: | :--------: | :----: | :-----: |
+| Yelp                | 716847   | 13954819   | 300    | 100     |
+| Reddit              | 232965   | 114615892  | 602    | 41      |
+| Flickr              | 89250    | 899756     | 500    | 7       |
+| CoraFull            | 19793    | 126842     | 8710   | 7       |
+| AmazonProducts      | 1569960  | 264339468  | 200    | 107     |
+| CoauthorPhysics     | 34493    | 495924     | 8415   | 5       |
+| ogbn-products       | 2449029  | 61859140   | 100    | 47      |
+
+
 
 ## Usage
 
@@ -101,7 +129,7 @@ The results are in the `exp` directory.
 
 
 ### Experiment Customization
-Adjust configurations in `CaPGNN/config/*yaml` to customize dataset, model, training hyperparameter, bit-width assignment settings or add new configurations.
+Adjust configurations in `CaPGNN/config/*yaml` to customize dataset, model, training hyperparameter or add new configurations.
 
 
 ## License
