@@ -1,6 +1,6 @@
 # Optimizing Parallel Graph Neural Network Training with Joint Caching and Resource-Aware Graph Partitioning
 
-<div align="center"><img src="https://github.com/user-attachments/assets/06f1ba1c-5e79-4e2c-a3d2-7101ae8f0ae2"/></div>   
+<div align="center"><img src="https://github.com/songxf1024/CaPGNN/blob/master/images/cover.png?raw=true"/></div>   
 
 ## Directory Hierarchy
 ```
