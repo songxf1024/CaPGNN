@@ -4,9 +4,11 @@ import csv
 import os
 import random
 from enum import Enum
+
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 try:
     import torchdata
+
     torchdata._warning_shown = True
 except ImportError:
     pass
@@ -30,11 +32,14 @@ import gpu
 from collections import defaultdict, Counter
 import tools
 
+
 class DistGNNType(Enum):
     DistGCN = 0
     DistSAGE = 1
 
+
 MODEL_MAP: Dict[str, DistGNNType] = {'gcn': DistGNNType.DistGCN, 'sage': DistGNNType.DistSAGE}
+
 
 def set_random_seeds(seed=42):
     random.seed(seed)
@@ -42,6 +47,7 @@ def set_random_seeds(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
 
 class GraphInfo(object):
     def __init__(self, graph=None, node_feats=None, gpb=None,
@@ -52,25 +58,32 @@ class GraphInfo(object):
         self.graph = graph
         self.gpb = gpb
         self.node_feats = node_feats
-        self.is_bidirected = is_bidirected      # bool，Is it an undirected graph (judgment condition: incoming degree of each node == outgoing degree)
-        self.send_idx = send_idx                # dict，On each remote partition i, the start and end position of send_idx. For example {0: (0, 17660), 2: (17660, 36595)}
-        self.total_send_idx = total_send_idx    # list，cat on all remote partitions i, send_idx's specific ID. It is the local ID of the corresponding partition. Such as [xx,xx,xx,...,xx]
-        self.recv_idx = recv_idx                # dict，On the local partition, the HALO node belonging to the remote partition i is offset from the inner point ID. Such as {0: (0, 3, 6, 16), 2: (8, 9)}
-        self.agg_scores = agg_scores            # dict，On the local partition, the score of the HALO node belonging to the remote partition i. For example {0: ([x,x] forward, [x,x] backward), 2: ([x,x] forward, [x,x] backward)}
-        self.num_inner = num_inner              # int，Number of internal nodes on the current partition (not including HALO nodes)
-        self.num_remote = num_remote            # int，The number of remote nodes on the current partition (i.e., HALO nodes)
-        self.num_marginal = num_marginal        # int，
-        self.num_central = num_central          # int，
+        self.is_bidirected = is_bidirected  # boolIs it an undirected graph (judgment condition: incoming degree of each node == outgoing degree)
+        self.send_idx = send_idx  # dictOn each remote partition i, the start and end position of send_idx. For example {0: (0, 17660), 2: (17660, 36595)}
+        self.total_send_idx = total_send_idx  # listcat on all remote partitions i, send_idx's specific ID. It is the local ID of the corresponding partition. Such as [xx,xx,xx,...,xx]
+        self.recv_idx = recv_idx  # dictOn the local partition, the HALO node belonging to the remote partition i is offset from the inner point ID. Such as {0: (0, 3, 6, 16), 2: (8, 9)}
+        self.agg_scores = agg_scores  # dictOn the local partition, the score of the HALO node belonging to the remote partition i. For example {0: ([x,x] forward, [x,x] backward), 2: ([x,x] forward, [x,x] backward)}
+        self.num_inner = num_inner  # intNumber of internal nodes on the current partition (not including HALO nodes)
+        self.num_remote = num_remote  # intThe number of remote nodes on the current partition (i.e., HALO nodes)
+        self.num_marginal = num_marginal  # int
+        self.num_central = num_central  # int
         self.device = device
 
     def __str__(self):
         torch.set_printoptions(edgeitems=2, threshold=10)
+
         def format_tensor(tensor):
             return str(tensor).replace('\n', ' ')
+
         def format_value(value):
-            return '{\n' + ',\n'.join(f"    -- {k!r}: {format_tensor(v)}" for k, v in value.items()) + '\n  }' if isinstance(value, dict) else str(value)
+            return '{\n' + ',\n'.join(
+                f"    -- {k!r}: {format_tensor(v)}" for k, v in value.items()) + '\n  }' if isinstance(value,
+                                                                                                       dict) else str(
+                value)
+
         attributes = ',\n>> '.join(f"{key}={format_value(value)}" for key, value in self.__dict__.items())
         return f"{self.__class__.__name__}(\n>> {attributes}\n)"
+
 
 def generate_random_node_features(g, feat_dim=128, num_classes=10, train_ratio=0.8, val_ratio=0.1, nodes_feats=None):
     """
@@ -103,6 +116,7 @@ def generate_random_node_features(g, feat_dim=128, num_classes=10, train_ratio=0
         nodes_feats[f'{ntype}/test_mask'] = test_mask
     return nodes_feats
 
+
 class CSPart(object):
     def __init__(self, args):
         self.DEBUG = True
@@ -129,11 +143,12 @@ class CSPart(object):
         else:
             for rank in range(self.partition_size): self.log(self.graph_info[rank])
 
-    def coarse_graph_patition(self, fast_skip=False, part_method='random', do_partition=False, num_hops=1, server_gpus=None):
+    def coarse_graph_patition(self, fast_skip=False, part_method='random', do_partition=False, num_hops=1,
+                              server_gpus=None):
         partition_dir = '{}/{}/{}part'.format(self.partition_dir, self.dataset_name, self.partition_size)
         subpartition_dir = '{}/{}/{}server'.format(self.partition_dir, self.dataset_name, self.server_num)
-        if fast_skip and server_num==1 and os.path.exists(partition_dir): return
-        if fast_skip and server_num>1 and os.path.exists(subpartition_dir): return
+        if fast_skip and server_gpus == 1 and os.path.exists(partition_dir): return
+        if fast_skip and isinstance(server_gpus, list) and os.path.exists(subpartition_dir): return
         graph_patition_store(self.dataset_name, self.partition_size,
                              self.dataset_dir, self.partition_dir,
                              num_hops=num_hops, part_method=part_method,
@@ -151,15 +166,18 @@ class CSPart(object):
             #      - Cross-partition communication: In distributed training, compute nodes of different partitions need to exchange information of nodes and edges. RangePartitionBook helps manage these cross-partition communications.
             #   RangePartitionBook provides some methods and properties to query partition information, such as:
             #      - partid2nids(part_id): Returns the node ID range of the specified partition ID.
-            #      - partid2eids(part_id)：Returns the edge ID range of the specified partition ID.
-            #      - nid2partid(nid)：Returns the partition ID where the specified node ID is located.
-            #      - eid2partid(eid)：Returns the partition ID where the specified edge ID is located.
-            g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
-            if len(nodes_feats.keys())==0 or '_N/x' in nodes_feats:
+            #      - partid2eids(part_id)Returns the edge ID range of the specified partition ID.
+            #      - nid2partid(nid)Returns the partition ID where the specified node ID is located.
+            #      - eid2partid(eid)Returns the partition ID where the specified edge ID is located.
+            g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config,
+                                                                                                       rank)
+            if len(nodes_feats.keys()) == 0 or '_N/x' in nodes_feats:
                 # x = nodes_feats['_N/x']
                 nodes_feats = {k: v for k, v in g.ndata.items()}
                 # note: only for training purposes, not for accuracy
-                generate_random_node_features(g=g, feat_dim=128, num_classes=16, train_ratio=0.8, val_ratio=0.1, nodes_feats=nodes_feats)
+                print("\033[91m!! generate_random_node_features. only for training purposes, not for accuracy\033[0m")
+                generate_random_node_features(g=g, feat_dim=128, num_classes=16, train_ratio=0.8, val_ratio=0.1,
+                                              nodes_feats=nodes_feats)
                 # if '_N/x' in nodes_feats:
                 #     nodes_feats['_N/feat'] = nodes_feats['_N/x']
                 #     nodes_feats.pop('_N/x')
@@ -168,7 +186,8 @@ class CSPart(object):
             # print(f'{rank}=>{g.formats()} [METIS]')
             save_dir = f'{partition_dir}/graph_degrees'
             # load global degrees information
-            in_degrees_global, out_degrees_global = torch.load(f'{save_dir}/in_degrees.pt'), torch.load(f'{save_dir}/out_degrees.pt')
+            in_degrees_global, out_degrees_global = torch.load(f'{save_dir}/in_degrees.pt'), torch.load(
+                f'{save_dir}/out_degrees.pt')
             # g.ndata['orig_id'] = torch.load(f'{save_dir}/orig_id_{rank}.pt')
             # The ID of the node in the original large image
             orig_id = g.ndata['orig_id']
@@ -202,6 +221,8 @@ class CSPart(object):
             g_info.node_feats = nodes_feats
             g_info.gpb = gpb
             g_info.is_bidirected = is_bidirected
+            print(f"train_mask M10*<: {nodes_feats['train_mask'][:10].tolist()}")
+            print(f"train_mask: {nodes_feats['train_mask'].shape}; label: {nodes_feats['label'].shape}")
             self.log(f"<partition {rank} load done.>")
         return self.graph_info
 
@@ -217,9 +238,12 @@ class CSPart(object):
             for rank in range(self.partition_size):
                 current_partition_dir = f'{self.partition_dir}/{self.dataset_name}/{self.server_num}server/server{self.server_id}/{self.partition_size}part/part{rank}'
                 try:
-                    with open(f'{current_partition_dir}/send_idx{suffix}.pkl', 'rb') as f: send_idx = pickle.load(f)
-                    with open(f'{current_partition_dir}/recv_idx{suffix}.pkl', 'rb') as f: recv_idx = pickle.load(f)
-                    with open(f'{current_partition_dir}/agg_scores{suffix}.pkl', 'rb') as f: agg_scores = pickle.load(f)
+                    with open(f'{current_partition_dir}/send_idx{suffix}.pkl', 'rb') as f:
+                        send_idx = pickle.load(f)
+                    with open(f'{current_partition_dir}/recv_idx{suffix}.pkl', 'rb') as f:
+                        recv_idx = pickle.load(f)
+                    with open(f'{current_partition_dir}/agg_scores{suffix}.pkl', 'rb') as f:
+                        agg_scores = pickle.load(f)
                     graph_info[rank].send_idx = send_idx
                     graph_info[rank].recv_idx = recv_idx
                     graph_info[rank].agg_scores = agg_scores
@@ -233,7 +257,8 @@ class CSPart(object):
         if skip_load or (not all([except_info is None for except_info in except_list])):
             fail_idx = [i for i, except_info in enumerate(except_list) if except_info is not None]
             self.log(f'<worder {fail_idx} failed to load send/recv idx from disk, begin building...>')
-            send_idx_list, recv_idx_list, agg_scores_list = self._build_store_send_recv_idx_scores(graph_info, suffix=suffix)
+            send_idx_list, recv_idx_list, agg_scores_list = self._build_store_send_recv_idx_scores(graph_info,
+                                                                                                   suffix=suffix)
             for rank in range(self.partition_size):  # fail_idx
                 graph_info[rank].send_idx = send_idx_list[rank]
                 graph_info[rank].recv_idx = recv_idx_list[rank]
@@ -270,7 +295,8 @@ class CSPart(object):
                     # Get the node ID belonging to partition i in the current partition rank (that is, the HALO node of partition i => partition rank)
                     halo_local_belong2i_mask = (nodes_feats['part_id'] == i)
                     # get forward & backward aggreagtion scores for remote neighbors
-                    agg_score = self._get_agg_scores(local_graph, halo_local_belong2i_mask, nodes_feats, self.model_type)
+                    agg_score = self._get_agg_scores(local_graph, halo_local_belong2i_mask, nodes_feats,
+                                                     self.model_type)
                     # Calculate the local ID or offset of these HALO nodes belonging to partition i in the current partition rank.
                     # Because the order is that inner node is ranked first and outer node is ranked behind, so it can be taken like this.
                     # Because the order is that inner node is ranked first and outer node is ranked behind, so it can be taken like this.
@@ -304,27 +330,33 @@ class CSPart(object):
                     # Since remote_ids has directly represented its ID on the partition to which it belongs, it can be assigned directly here without adjusting the local ID range.
                     if rank in temp_send_buffer_list[part_i].keys():
                         temp_send_idx[part_i] = temp_send_buffer_list[part_i][rank][0]  # data from part_i to rank
-                        scores[part_i] = temp_send_buffer_list[part_i][rank][1]         # score from part_i to rank
+                        scores[part_i] = temp_send_buffer_list[part_i][rank][1]  # score from part_i to rank
             for k, v in temp_send_idx.items(): self.log(f'<worker{rank} send {len(v)} nodes to worker{k}>')
             temp_send_idx_list[rank] = temp_send_idx
             scores_list[rank] = scores
 
         for rank in range(self.partition_size):
             current_partition_dir = f'{self.partition_dir}/{self.dataset_name}/{self.server_num}server/server{self.server_id}/{self.partition_size}part/part{rank}'
-            with open(f'{current_partition_dir}/send_idx{suffix}.pkl', 'wb') as f: pickle.dump(temp_send_idx_list[rank], f)
+            with open(f'{current_partition_dir}/send_idx{suffix}.pkl', 'wb') as f: pickle.dump(temp_send_idx_list[rank],
+                                                                                               f)
             with open(f'{current_partition_dir}/recv_idx{suffix}.pkl', 'wb') as f: pickle.dump(recv_idx_list[rank], f)
             with open(f'{current_partition_dir}/agg_scores{suffix}.pkl', 'wb') as f: pickle.dump(scores_list[rank], f)
         return temp_send_idx_list, recv_idx_list, scores_list
 
-    def _get_agg_scores(self, local_graph: dgl.DGLHeteroGraph, belong2i_mask: Tensor, nodes_feats: Dict[str, Tensor], model_type: DistGNNType):
+    def _get_agg_scores(self, local_graph: dgl.DGLHeteroGraph, belong2i_mask: Tensor, nodes_feats: Dict[str, Tensor],
+                        model_type: DistGNNType):
         '''
         Returns the forward and backward aggregation scores for each node in the local map that are used to evaluate the importance or influence of the node.
         '''
         halo_nodes = local_graph.nodes()[belong2i_mask]
-        fp_local_halo_out_node_ids = local_graph.out_edges(halo_nodes)[1]   # In the current partition graph, the forward neighbor of the halo node (i.e. the target node that exits the edge)
-        fp_local_out_degrees = local_graph.out_degrees(halo_nodes)          # In the current partition diagram, the output degree of the halo node
-        bp_neighbor_ids = local_graph.in_edges(halo_nodes)[0]               # In the current partition graph, the backward neighbor of the halo node (i.e. the source node entering the edge)
-        bp_local_degrees = local_graph.in_degrees(halo_nodes)               # In the current partition graph, the entry of the halo node
+        fp_local_halo_out_node_ids = local_graph.out_edges(halo_nodes)[
+            1]  # In the current partition graph, the forward neighbor of the halo node (i.e. the target node that exits the edge)
+        fp_local_out_degrees = local_graph.out_degrees(
+            halo_nodes)  # In the current partition diagram, the output degree of the halo node
+        bp_neighbor_ids = local_graph.in_edges(halo_nodes)[
+            0]  # In the current partition graph, the backward neighbor of the halo node (i.e. the source node entering the edge)
+        bp_local_degrees = local_graph.in_degrees(
+            halo_nodes)  # In the current partition graph, the entry of the halo node
 
         # Delete nodes:
         # On the one hand, limited deletion has the least impact on the current partition, which also has a small impact on accuracy.
@@ -336,28 +368,34 @@ class CSPart(object):
             # - In the local graph, how many nodes in the outgoing degree of each halo node occupy the invoice number of the node in the global graph?
 
             # The number of incoming points to the inner point to by each halo node in the whole graph. The larger the value, the more data this inner point needs to receive when propagating forward.
-            fp_global_in_degrees = nodes_feats['in_degrees'][fp_local_halo_out_node_ids].float().clamp(min=1) 
+            fp_global_in_degrees = nodes_feats['in_degrees'][fp_local_halo_out_node_ids].float().clamp(min=1)
             # The output degree of each halo node in the whole graph. The more output, the more important the node may be in the whole graph. But in the current partition, since it is a halo node, it is not necessarily true.
-            fp_global_out_degrees = nodes_feats['out_degrees'][belong2i_mask]                        
+            fp_global_out_degrees = nodes_feats['out_degrees'][belong2i_mask]
             # In fact, it is a normalization of fp_global_in_degrees (the reciprocal of square root). The larger the value, the smaller the score, which means that the halo node will have a smaller impact on an inner point, because there are many other points that can be received by the inner point.
-            score = torch.pow(fp_global_in_degrees, -0.5).split(fp_local_out_degrees.tolist())     
+            score = torch.pow(fp_global_in_degrees, -0.5).split(fp_local_out_degrees.tolist())
             # A weighted sum of neighbors of each halo node. Take the inverse of the square root of the output degree, the more the output degree, the smaller the value. The more output, the more the halo node is deleted in the current partition, it may be used in other partitions.
-            fp_agg_score = torch.tensor([torch.sum(score[i] * torch.pow(fp_global_out_degrees[i].float().clamp(min=1), -0.5)) for i in range(len(score))])
+            fp_agg_score = torch.tensor(
+                [torch.sum(score[i] * torch.pow(fp_global_out_degrees[i].float().clamp(min=1), -0.5)) for i in
+                 range(len(score))])
             # Backward aggregation score:
             # - Calculate the global degrees of backward neighbors bp_global_degrees.
             # - Calculate the square countdown of the outgoing degree of each backward neighbor, and divide and sum according to the incoming degree of the node to obtain the backward aggregation score bp_agg_score.
             bp_global_out_degrees = nodes_feats['out_degrees'][bp_neighbor_ids].float().clamp(min=1)
             bp_global_in_degrees = nodes_feats['in_degrees'][belong2i_mask]
             score = torch.pow(bp_global_out_degrees, -0.5).split(bp_local_degrees.tolist())
-            bp_agg_score = torch.tensor([torch.sum(score[i] * torch.pow(bp_global_in_degrees[i].float().clamp(min=1), -0.5)) for i in range(len(score))])
+            bp_agg_score = torch.tensor(
+                [torch.sum(score[i] * torch.pow(bp_global_in_degrees[i].float().clamp(min=1), -0.5)) for i in
+                 range(len(score))])
         elif model_type is DistGNNType.DistSAGE:
             # Forward Aggregation Score:
             # - The incoming degree of each forward neighbor is calculated inverted, and segmented and summed according to the outgoing degree of the node to obtain the forward aggregation score fp_agg_score.
-            score = torch.pow(nodes_feats['in_degrees'][fp_local_halo_out_node_ids].float().clamp(min=1), -1).split(fp_local_out_degrees.tolist())
+            score = torch.pow(nodes_feats['in_degrees'][fp_local_halo_out_node_ids].float().clamp(min=1), -1).split(
+                fp_local_out_degrees.tolist())
             fp_agg_score = torch.tensor([torch.sum(value) for value in score])
             # Backward aggregation score:
             # - The outgoing degree of each backward neighbor is calculated inversely, and segmented and summed according to the incoming degree of the node to obtain the backward aggregation score bp_agg_score.
-            score = torch.pow(nodes_feats['out_degrees'][bp_neighbor_ids].float().clamp(min=1), -1).split(bp_local_degrees.tolist())
+            score = torch.pow(nodes_feats['out_degrees'][bp_neighbor_ids].float().clamp(min=1), -1).split(
+                bp_local_degrees.tolist())
             bp_agg_score = torch.tensor([torch.sum(value) for value in score])
         else:
             raise NotImplementedError(f'{model_type} is not implemented yet.')
@@ -393,7 +431,7 @@ class CSPart(object):
         m_indices = m_mask.nonzero(as_tuple=True)[0][:num_inner - num_central]
 
         # Generate new numbered map
-        new_id = torch.full((num_inner,), -1, dtype=torch.long)  # 初始化为 -1，防止未赋值
+        new_id = torch.full((num_inner,), -1, dtype=torch.long)  # �: -12b*K<
         new_id[c_indices] = torch.arange(num_central, dtype=torch.long)
         new_id[m_indices] = torch.arange(num_central, num_inner, dtype=torch.long)
 
@@ -485,13 +523,15 @@ class CSPart(object):
         Bind the GPU to the partition. Note that you need to bind to the graph in order from weak to strong computing power, that is, self.graph_info[0] is bound to the weakest GPU.
         The partition ID of the subgraph corresponds to the index of sorted_gpu_ids and has nothing to do with the GPU ID.
         '''
-        assert len(gpus.split(',')) == len(graph_info), ">> The number of GPUs is different from the number of partitions <<"
+        assert len(gpus.split(',')) == len(
+            graph_info), ">> The number of GPUs is different from the number of partitions <<"
         gpu_list = list(map(int, gpus.split(',')))
         # Sort by indices value descending order and get the corresponding GPU device key. The larger the value, the greater the calculation cost and the weaker the GPU.
         self.sorted_gpu_ids = gpu.get_gpu_capability(gpu_list)
         # The first time is to specify the GPU and graph casually
         for i, g in enumerate(graph_info):
-            print(f"<assign {torch.cuda.get_device_name(self.sorted_gpu_ids[i])}[{self.sorted_gpu_ids[i]}] to subgraph {i}>")
+            print(
+                f"<assign {torch.cuda.get_device_name(self.sorted_gpu_ids[i])}[{self.sorted_gpu_ids[i]}] to subgraph {i}>")
             g.device = torch.device(f"cuda:{self.sorted_gpu_ids[i]}")
             # g.num_remote = torch.count_nonzero(g.graph.nodes_feats['outer_node']).item()
             self.assig_graphs_gpus[self.sorted_gpu_ids[i]] = g
@@ -510,11 +550,11 @@ class CSPart(object):
             print("Sizes of each component:", [len(comp) for comp in connected_components])
             return False
 
-    def calculate_Memory(self,  g_info=None, beta=0, num_nodes=None, num_edges=None, feat=None):
+    def calculate_Memory(self, g_info=None, beta=0, num_nodes=None, num_edges=None, feat=None):
         Vi = num_nodes or g_info.graph.num_nodes()
         Ei = num_edges or g_info.graph.num_edges()
         di = feat or g_info.node_feats['feat']
-        Mi = (Vi * 4 + Ei * 4 * 2 + di.shape[0] * di.shape[1] * 4 + beta * 4)/1024/1024
+        Mi = (Vi * 4 + Ei * 4 * 2 + di.shape[0] * di.shape[1] * 4 + beta * 4) / 1024 / 1024
         return Mi
 
     def calculate_T_comp_bk(self, gpu_id, g_info=None, alpa=0.5, num_nodes=None, num_edges=None):
@@ -523,14 +563,14 @@ class CSPart(object):
         s_ms, m_mm = gpu.gpu_capability[gpu_id][1:3]
         # T_comp_i = alpa*(Vi*Vi-2*Ei)*s_ms + (1-alpa)*Vi*Vi*m_mm
         # T_comp_i = alpa*(2*Ei)*s_ms + (1-alpa)*Vi*Vi*m_mm
-        T_comp_i = Ei*s_ms
+        T_comp_i = Ei * s_ms
         return T_comp_i
 
     def calculate_T_comp(self, gpu_id, g_info=None, alpa=0.35, num_nodes=None, num_edges=None):
         Vi = num_nodes or g_info.num_inner  # g_info.graph.num_nodes()
         Ei = num_edges or g_info.graph.num_edges()
         s_ms, m_mm = gpu.gpu_capability[gpu_id][1:3]
-        T_comp_i = alpa*Ei*s_ms + (1-alpa)*Vi*m_mm
+        T_comp_i = alpa * Ei * s_ms + (1 - alpa) * Vi * m_mm
         # T_comp_i = Ei*s_ms
         return T_comp_i
 
@@ -539,7 +579,7 @@ class CSPart(object):
         n = len(self.assig_graphs_gpus.keys())
         # E_outer = E_outer or g_info.num_remote
         H2D_m, D2H_m, D2D_m = gpu.gpu_capability[gpu_id][3:6]
-        T_comp_i = E_outer * ((H2D_m+D2H_m)*(1-1/n)+D2D_m*1/n)
+        T_comp_i = E_outer * ((H2D_m + D2H_m) * (1 - 1 / n) + D2D_m * 1 / n)
         return T_comp_i
 
     def calculate_target(self, assig_graphs_gpus):
@@ -571,7 +611,8 @@ class CSPart(object):
         temp = Counter()
         for rank in range(self.partition_size):
             part_config = f'{self.partition_dir}/{self.dataset_name}/{self.server_num}server/server{self.server_id}/{self.partition_size}part/{self.dataset_name}.json'
-            g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
+            g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config,
+                                                                                                       rank)
             halo_nodes = g.nodes()[~g.ndata['inner_node'].bool()].numpy()
             halo_global_ids = g.ndata[dgl.NID][halo_nodes].numpy()
             temp.update(halo_global_ids)
@@ -584,7 +625,7 @@ class CSPart(object):
         # Start with the weakest GPU
         for index in range(len(self.sorted_gpu_ids)):
             gpu_id = self.sorted_gpu_ids[index]
-            # Calculate λ and its average value λ_mean
+            # Calculate � and its average value �_mean
             lam, lam_mean, lam_std, halo_edges = self.calculate_target(assig_graphs_gpus)
             initial_halo_edges = halo_edges[index]
             print(f"gpu_id: {gpu_id}[{index}], lam - mean: {lam[index] - lam_mean}[{lam[index]} - {lam_mean}]")
@@ -596,16 +637,18 @@ class CSPart(object):
             gpb = g_info.gpb
             part_id = gpb.partid  # The partition ID of the graph belongs to
 
-            # Select a GPU with λ_i greater than λ_mean. Skip first if less than or equal
+            # Select a GPU with �_i greater than �_mean. Skip first if less than or equal
             nodes = local_graph.num_nodes()
             edges = local_graph.num_edges()
-            if lam[index] <= lam_mean and gpu.gpu_memory_enough(gpu_id=gpu_id, num_nodes=nodes, num_edges=edges, feats=nodes_feats["feat"], beta=1e8):
+            if lam[index] <= lam_mean and gpu.gpu_memory_enough(gpu_id=gpu_id, num_nodes=nodes, num_edges=edges,
+                                                                feats=nodes_feats["feat"], beta=1e8):
                 result[index] = True
                 print(f"Partition {part_id} has no change")
                 print(f"No change in the number of nodes: {g_info.graph.num_nodes()}")
                 print(f"No change in edge count: {g_info.graph.num_edges()}")
                 print(f"No change in scores: {lam[index]}")
-                records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>', g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index]])
+                records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>',
+                                g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index]])
                 continue
 
             halo_local_offset_start = len(torch.nonzero(nodes_feats['inner_node']))
@@ -650,25 +693,34 @@ class CSPart(object):
                 # if nodes_feats['inner_node'][halo_local_node_id].item(): remaining_inner_nodes -= 1
                 remaining_all_nodes -= 1
                 remaining_halo_nodes = initial_halo_nodes_count - len(nodes_to_remove_id)
-                remaining_halo_edges = initial_halo_edges - len(removed_edges_set)  # len(removed_edges_set.intersection(max_score_node_edges))
+                remaining_halo_edges = initial_halo_edges - len(
+                    removed_edges_set)  # len(removed_edges_set.intersection(max_score_node_edges))
 
                 # Estimate the removed T_comp and T_comm
                 t1 = self.calculate_T_comp(gpu_id, num_nodes=remaining_inner_nodes, num_edges=remaining_edges)
                 t2 = self.calculate_T_comm(gpu_id, E_outer=remaining_halo_edges)
                 estimated_lam_reduction = t1 + t2
                 # If the estimated lambda change is close to lam_mean - lam[index], then select
-                if estimated_lam_reduction <= (lam[index] + lam_mean)/2 and gpu.gpu_memory_enough(gpu_id=gpu_id, num_nodes=remaining_all_nodes, num_edges=remaining_edges, feats=nodes_feats["feat"], beta=1e8): break
+                if estimated_lam_reduction <= (lam[index] + lam_mean) / 2 and gpu.gpu_memory_enough(gpu_id=gpu_id,
+                                                                                                    num_nodes=remaining_all_nodes,
+                                                                                                    num_edges=remaining_edges,
+                                                                                                    feats=nodes_feats[
+                                                                                                        "feat"],
+                                                                                                    beta=1e8): break
                 nodes_to_remove_id.append(halo_local_node_id)
                 nodes_to_remove_idx.append(halo_local_idxs[max_score_idx])
             # Delete selected nodes
             if len(nodes_to_remove_id) > 0:
                 print(f"{len(nodes_to_remove_id)} nodes were deleted for partition {part_id}")
                 new_graph = dgl.remove_nodes(local_graph, torch.tensor(nodes_to_remove_id))
-                new_node_feats = {key: value[~torch.isin(torch.arange(value.size(0)), torch.tensor(nodes_to_remove_idx))] for key, value in nodes_feats.items()}
+                new_node_feats = {
+                    key: value[~torch.isin(torch.arange(value.size(0)), torch.tensor(nodes_to_remove_idx))] for
+                    key, value in nodes_feats.items()}
                 print(f"Changes in the number of nodes: {g_info.graph.num_nodes()} => {new_graph.num_nodes()}")
                 print(f"Changes in edge count: {g_info.graph.num_edges()} => {new_graph.num_edges()}")
                 print(f"Changes in scores: {lam[index]} => {estimated_lam_reduction}")
-                records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>', new_graph.num_nodes(), new_graph.num_edges(), estimated_lam_reduction])
+                records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>',
+                                new_graph.num_nodes(), new_graph.num_edges(), estimated_lam_reduction])
                 g_info.graph = new_graph
                 g_info.node_feats = new_node_feats
                 g_info.num_inner = torch.sum(new_node_feats['inner_node']).item()
@@ -685,7 +737,8 @@ class CSPart(object):
                 print(f"No change in the number of nodes: {g_info.graph.num_nodes()}")
                 print(f"No change in edge count: {g_info.graph.num_edges()}")
                 print(f"No change in scores: {lam[index]}")
-                records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>', g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index]])
+                records.append([part_id, g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index], '=>',
+                                g_info.graph.num_nodes(), g_info.graph.num_edges(), lam[index]])
 
             # Calculate and compare the target value. If it is still greater than, continue to delete it.
             print('*' * 50)
@@ -694,12 +747,13 @@ class CSPart(object):
     def do_partition(self, assig_graphs_gpus, threshold=0.01):
         if os.path.exists('records.csv'): os.remove('records.csv')
         with open('records.csv', 'a+', newline='') as csvfile:
-            csv.writer(csvfile).writerow(['part_id', 'Nodes', 'Edges', 'Scores', 'Nodes_new', 'Edges_new', 'Scores_new'])
+            csv.writer(csvfile).writerow(
+                ['part_id', 'Nodes', 'Edges', 'Scores', 'Nodes_new', 'Edges_new', 'Scores_new'])
         while True:
             assig_graphs_gpus, result, records = self.adjust_once(assig_graphs_gpus)
             with open('records.csv', 'a+', newline='') as csvfile:
                 csv.writer(csvfile).writerows(records)
-            print('#'*80)
+            print('#' * 80)
             lam, lam_mean, lam_std, _ = self.calculate_target(assig_graphs_gpus)
             if lam_std < lam_mean * threshold: break
             if all(result): break
@@ -717,7 +771,8 @@ class CSPart(object):
             g_info = assig_graphs_gpus[gpu_id]
             print(f"GPU: {gpu_id}")
             print(f"Partition: {g_info.gpb.partid}")
-            print(f"Number of nodes: {g_info_prev.graph.num_nodes()}[in:{g_info_prev.num_inner}] => {g_info.graph.num_nodes()}[in:{g_info.num_inner}]")
+            print(
+                f"Number of nodes: {g_info_prev.graph.num_nodes()}[in:{g_info_prev.num_inner}] => {g_info.graph.num_nodes()}[in:{g_info.num_inner}]")
             print(f"Number of edges: {g_info_prev.graph.num_edges()} => {g_info.graph.num_edges()}")
             print(f"lam: {lam_prev[index]} => {lam[index]}")
             print(f"lam_mean: {lam_mean_prev} => {lam_mean}")
@@ -738,7 +793,8 @@ class CSPart(object):
             part_id = gpb.partid
             nodes = local_graph.num_nodes()
             edges = local_graph.num_edges()
-            if gpu.gpu_memory_enough(gpu_id=gpu_id, num_nodes=nodes, num_edges=edges, feats=nodes_feats["feat"], beta=1e8):
+            if gpu.gpu_memory_enough(gpu_id=gpu_id, num_nodes=nodes, num_edges=edges, feats=nodes_feats["feat"],
+                                     beta=1e8):
                 print(f"Partition {part_id} does not require node deletion")
                 continue
 
@@ -771,7 +827,8 @@ class CSPart(object):
                         remaining_edges -= 1
                 remaining_all_nodes -= 1
 
-                if gpu.gpu_memory_enough(gpu_id, num_nodes=remaining_all_nodes, num_edges=remaining_edges, feats=nodes_feats["feat"], beta=1e8): break
+                if gpu.gpu_memory_enough(gpu_id, num_nodes=remaining_all_nodes, num_edges=remaining_edges,
+                                         feats=nodes_feats["feat"], beta=1e8): break
                 nodes_to_remove.append(halo_local_node_id)
                 remaining_halo_nodes = initial_halo_nodes_count - len(nodes_to_remove)
                 if remaining_halo_nodes <= 0: break
@@ -835,7 +892,8 @@ class CSPart(object):
                     temp[global_id.item()] = feature
                 halo_node_features.update(temp)
                 max_subg_size = max(max_subg_size, len(halo_global_ids))
-                print(f"[{part_id}-{i}] This time, {len(temp.keys())}/{len(halo_global_ids)} halo nodes are added to come in.")
+                print(
+                    f"[{part_id}-{i}] This time, {len(temp.keys())}/{len(halo_global_ids)} halo nodes are added to come in.")
         return halo_node_features, max_subg_size
 
 
@@ -872,10 +930,11 @@ def auto_select_dtype(feat_tensor):
         else:
             return torch.float32
 
+
 def partition1():
     parser = argparse.ArgumentParser(description='graph partition scripts')
-    parser.add_argument('--dataset_dir', type=str, default='/mnt/disk/sxf/data/dataset')
-    parser.add_argument('--partition_dir', type=str, default='/mnt/disk/sxf/data/part_data')
+    parser.add_argument('--dataset_dir', type=str, default='/mnt/disk/datasets/graph')
+    parser.add_argument('--partition_dir', type=str, default='/mnt/disk/datasets/capgnn/part_data')
     parser.add_argument("-p", "--our_partition", type=int, default=1, help="Set our_partition to True (1) or False (0).")
     parser.add_argument("-s", "--server_num", type=int, help="Set the number of servers.")
     parser.add_argument("-n", "--partition_num", type=str, help="Set the number of partitions of each server. E.g., 4 or 2,3")
@@ -884,22 +943,22 @@ def partition1():
     args = parser.parse_args()
     set_random_seeds(42)
 
-    dataset_groups = ['ogbn-arxiv',             # 0 
-                      'ogbn-products',          # 1
-                      'cite',                   # 2    
-                      'cora',                   # 3
-                      'flickr',                 # 4
-                      'yelp',                   # 5
-                      'reddit',                 # 6
-                      'amazonProducts',         # 7
-                      'amazonCoBuyComputer',    # 8
-                      'coauthorPhysics',        # 9
-                      'coraFull',               # 10
-                      'tolokers',               # 11
-                      'ogbn-papers100M',        # 12
-                      'friendster',             # 13
-                      'wikidata5M',             # 14
-                    ]
+    dataset_groups = ['ogbn-arxiv',  # 0
+                      'ogbn-products',  # 1
+                      'cite',  # 2
+                      'cora',  # 3
+                      'flickr',  # 4
+                      'yelp',  # 5
+                      'reddit',  # 6
+                      'amazonProducts',  # 7
+                      'amazonCoBuyComputer',  # 8
+                      'coauthorPhysics',  # 9
+                      'coraFull',  # 10
+                      'tolokers',  # 11
+                      'ogbn-papers100M',  # 12
+                      'friendster',  # 13
+                      'wikidata5M',  # 14
+                      ]
     gpu_groups = {
         '228': [
             # 0        1        2        3        4        5        6        7         8        9
@@ -930,39 +989,36 @@ def partition1():
     # The order of all_servers in gpu.py corresponds to the order of partition_num.
     # python cspart.py -p=1 -d=4 -s=2 -n=2,3 -g=0
     # ------------Main parameter modification area---------------- #
-    test_load_part          = False
-    threshold               = 0.01
-    args.dataset_index      = args.dataset_index    or 6
-    args.server_num         = args.server_num       or 2
-    args.partition_num      = args.partition_num    or "2,2"
-    args.gpus_index         = args.gpus_index       or 0
-    args.our_partition      = args.our_partition    # or 1
-    part_method             = ['metis', 'random'][0]
+    test_load_part = False
+    threshold = 0.01
+    args.dataset_index = args.dataset_index or 6
+    args.server_num = args.server_num or 2
+    args.partition_num = args.partition_num or "2,2"
+    args.gpus_index = args.gpus_index or 0
+    part_method = ['metis', 'random'][0]
     # --------------------------------------- #
-    args.our_partition      = [False, True][args.our_partition]
-    args.dataset_name       = dataset_groups[args.dataset_index]
-    args.partition_num      = [int(x) for x in args.partition_num.split(',')]
-
+    args.our_partition = [False, True][args.our_partition]
+    args.dataset_name = dataset_groups[args.dataset_index]
+    args.partition_num = [int(x) for x in args.partition_num.split(',')]
 
     # args.partition_size          = args.partition_num
     for sid in range(args.server_num):
         gpu.init_gpus(sid)
-        args.server_id      = sid
+        args.server_id = sid
         args.partition_size = args.partition_num[sid]
-        if args.server_num>1:
-            gpus            = gpu_groups[gpu.all_servers[sid]][args.partition_size][args.gpus_index]
+        if args.server_num > 1:
+            gpus = gpu_groups[gpu.all_servers[sid]][args.partition_size][args.gpus_index]
         else:
-            gpus            = gpu_groups[tools.outer_ip][args.partition_size][args.gpus_index]
+            gpus = gpu_groups[tools.outer_ip][args.partition_size][args.gpus_index]
         gpus_list = list(map(int, gpus.split(',')))
         gpu.cal_gpus_capability(gpus_list)
         print(f'>> Dataset: {args.dataset_name}')
-        print(f'>> GPU list: [{gpus_index}] => {gpus}')
+        print(f'>> GPU list: [{args.gpus_index}] => {gpus}')
         print(f'>> Partition threshold: {threshold}')
-        print(f'>> Number of partitions: {part_num}')
+        print(f'>> Number of partitions: {args.partition_num}')
         print(f'>> Number of servers: {args.server_num}')
         print(f'>> Partition method: {part_method}')
-        print(f'>> Partition policy: {our_partition}')
-
+        print(f'>> Partition policy: {args.our_partition}')
 
         vargs = vars(args)
         app = CSPart(vargs)
@@ -987,21 +1043,27 @@ def partition1():
         app.get_halo_count()
         new_assig_graphs_gpus = copy.deepcopy(assig_graphs_gpus)
         t2 = time.time()
-        if vargs["our_partition"] and len(gpus.split(',')) > 1: new_assig_graphs_gpus = app.do_partition(new_assig_graphs_gpus, threshold=threshold)
-        else: print(">> No partition required")
+        if vargs["our_partition"] and len(gpus.split(',')) > 1:
+            new_assig_graphs_gpus = app.do_partition(new_assig_graphs_gpus, threshold=threshold)
+        else:
+            print(">> No partition required")
         print('=' * 100)
         print('>> do partition: ', time.time() - t2)
 
         new_graph_info = []
-        for index in range(len(app.sorted_gpu_ids)): new_graph_info.append(new_assig_graphs_gpus[app.sorted_gpu_ids[index]])
+        for index in range(len(app.sorted_gpu_ids)):
+            new_graph_info.append(new_assig_graphs_gpus[app.sorted_gpu_ids[index]])
         app.get_send_recv_idx_scores(new_graph_info, skip_load=True)
         app.reorder_graph(new_graph_info)
-        for index in range(len(app.sorted_gpu_ids)): assig_graphs_gpus[app.sorted_gpu_ids[index]] = new_graph_info[index]
+        for index in range(len(app.sorted_gpu_ids)): assig_graphs_gpus[app.sorted_gpu_ids[index]] = new_graph_info[
+            index]
         print('>> fine patition: ', time.time() - t1)
 
         # Save partition results
-        partition_file = os.path.join(app.partition_dir, f'{app.dataset_name}/{app.server_num}server/server{app.server_id}/{app.partition_size}part/{app.dataset_name}_processed_partitions_{vargs["our_partition"]}_{sorted(gpus_list)}.pkl')
-        with open(partition_file, 'wb') as f: pickle.dump(assig_graphs_gpus, f)
+        partition_file = os.path.join(app.partition_dir,
+                                      f'{app.dataset_name}/{app.server_num}server/server{app.server_id}/{app.partition_size}part/{app.dataset_name}_processed_partitions_{vargs["our_partition"]}_{sorted(gpus_list)}.pkl')
+        with open(partition_file, 'wb') as f:
+            pickle.dump(assig_graphs_gpus, f)
         print(f"Processed partitions saved to {partition_file}")
 
         # Loading pkl file
@@ -1009,14 +1071,17 @@ def partition1():
             print("Test loading pkl file")
             with open(partition_file, 'rb') as f: _ = pickle.load(f)
         print("=" * 100)
-        print(f"When training, be sure to set CUDA_VISIBLE_DEVICES in the following GPU order：{','.join(map(str, app.sorted_gpu_ids))}")
+        print(
+            f"When training, be sure to set CUDA_VISIBLE_DEVICES in the following GPU order: {','.join(map(str, app.sorted_gpu_ids))}")
 
-        halo_node_features, _ = app.overlapping_our(part_size=vargs['partition_size'], dataset=vargs['dataset_name'], gpus_list=gpus_list, k=-1, part_dir='/mnt/disk/sxf/data/part_data', our_partition=vargs['our_partition'])
-        print(f"The final number of valid nodes：[{vargs['dataset_name']}][{vargs['our_partition']}][{vargs['partition_size']}][{vargs['gpus_index']}] => {len(halo_node_features.keys())}")
+        halo_node_features, _ = app.overlapping_our(part_size=vargs['partition_size'], dataset=vargs['dataset_name'],
+                                                    gpus_list=gpus_list, k=-1, part_dir=vargs['partition_dir'],
+                                                    our_partition=vargs['our_partition'])
+        print(
+            f"The final number of valid nodes: [{vargs['dataset_name']}][{vargs['our_partition']}][{vargs['partition_size']}][{vargs['gpus_index']}] => {len(halo_node_features.keys())}")
         del app
         torch.cuda.empty_cache()
         print('#' * 50)
-
 
 
 # Calculate the halo node duplication
@@ -1046,7 +1111,7 @@ def overlapping(dataset_name, partition_size):
         # Store incoming and outgoing degrees
         # in_degrees_by_partition[rank] = in_degrees_global[orig_ids].numpy()
         # out_degrees_by_partition[rank] = out_degrees_global[orig_ids].numpy()
-        
+
     # Output the number of halo nodes and total number of nodes per partition
     for rank in range(partition_size):
         halo_count = len(halo_global_ids_by_partition[rank])
@@ -1077,8 +1142,6 @@ def overlapping(dataset_name, partition_size):
     print(f"Total overlapping halo nodes across all partitions: {total_overlapping_halo_nodes}")
     # Output the total number of overlapping halo nodes
     print(f"Total overlapping halo nodes across all partitions (set): {len(total_overlapping_halo_nodes_set)}")
-
-
 
 
 if __name__ == '__main__':

@@ -1,6 +1,5 @@
 data:
   dataset_path: /mnt/disk/sxf/data/datasets # data/dataset
-  partition_path: /mnt/disk/sxf/data/part_data
 model:
   num_layers: 3
   hidden_dim: 256

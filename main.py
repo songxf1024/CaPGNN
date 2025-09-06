@@ -53,15 +53,19 @@ def main(local_rank, args, storage_server):
     torch.autograd.set_detect_anomaly(False)
     torch.autograd.profiler.profile(False)
     torch.autograd.profiler.emit_nvtx(False)
-    os.environ['MASTER_ADDR'] = '202.38.247.228'
+
+    parts_list = args.num_parts if isinstance(args.num_parts, list) else [int(x) for x in str(args.num_parts).split(',')]
+    rank_offset = sum(parts_list[:args.server_id])
+    global_world_size = sum(parts_list)
+    os.environ['MASTER_ADDR'] = '202.38.247.228' if args.server_num > 1 else '127.0.0.1'
     os.environ['MASTER_PORT'] = args.port
-    os.environ['NCCL_SOCKET_IFNAME'] = 'eno1'  # 'lo'
-    os.environ['GLOO_SOCKET_IFNAME'] = 'eno1'  # 'lo'
+    os.environ['NCCL_SOCKET_IFNAME'] = 'eno1' if args.server_num > 1 else 'lo'
+    os.environ['GLOO_SOCKET_IFNAME'] = 'eno1' if args.server_num > 1 else 'lo'
     os.environ['NODE_RANK'] = str(args.server_id)
-    os.environ['RANK'] = str(args.server_id * args.num_parts[args.server_id] + local_rank)
+    os.environ['RANK'] = str(rank_offset + local_rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
     os.environ['LOCAL_WORLD_SIZE'] = str(args.num_parts[args.server_id])
-    os.environ['WORLD_SIZE'] = str(args.server_num*args.num_parts[args.server_id])
+    os.environ['WORLD_SIZE'] = str(global_world_size)
     os.environ['NCCL_P2P_DISABLE'] = '1'
     # os.environ['NCCL_ALGO'] = 'Tree'
     os.environ['NCCL_CHECKS_DISABLE'] = '1'
@@ -72,7 +76,7 @@ def main(local_rank, args, storage_server):
     torch.cuda.set_device(device)
     device_name = torch.cuda.get_device_name(local_rank)
     print(f"GPU {local_rank}: {device_name}")
-    warmup(device)
+    # warmup(device)
 
     lcache_size = args.lcache_size[local_rank] if type(args.lcache_size)==dict else args.lcache_size
     create_cache(alg=args.cache_alg, capacity=lcache_size, singleton=True, throw_err=False)
@@ -81,8 +85,8 @@ def main(local_rank, args, storage_server):
     print('>> init cache: ', time.time() - t1)
     trainer = Trainer(args, storage_server)
     if args.our_cache:  # and args.cache_alg==CACHEALG.JACA:  #  and rank==0
-        storage_server.get_halo_count(args=args, part_dir='/mnt/disk/sxf/data/part_data')
-        halo_node_feats, max_subg_size = storage_server.extract_halo_features_by_score(args=args, k=args.cache_topk, part_dir='/mnt/disk/sxf/data/part_data')
+        storage_server.get_halo_count(args=args, part_dir=args.part_dir)
+        halo_node_feats, max_subg_size = storage_server.extract_halo_features_by_score(args=args, k=args.cache_topk, part_dir=args.part_dir)
         storage_server.cache_server.vl_pm_size = max_subg_size
         storage_server.cache_server.init_vl_pool(max_subg_size)
         if local_rank==args.num_parts[args.server_id]-1:
@@ -95,6 +99,7 @@ def main(local_rank, args, storage_server):
     # dist.barrier()
     torch.cuda.empty_cache()
     # Start training according to the configuration
+    print(f'[{local_rank}] Start train...')
     time_record = trainer.train(local_rank)
     # Save training records
     trainer.save(time_record, suffix='csv')
@@ -119,6 +124,7 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--dataset_index", type=int, help="Set the dataset index.")
     parser.add_argument("-g", "--gpus_index", type=int, help="Set the dataset index.")
     parser.add_argument("-n", "--num_parts", type=str, help="Set the number of partitions of each server. E.g., 4 or 2,3")
+    parser.add_argument("-p", "--part_dir", type=str, default="/mnt/disk/datasets/capgnn/part_data", help="Partition dir path.")
     args = parser.parse_args()
 
     # ------------Parameter Main Definition Area---------------- #
@@ -207,7 +213,7 @@ if __name__ == '__main__':
     args.use_pipeline   = [False, True][1]                           # Whether to use a pipeline
     args.eval           = [False, True][1]                           # Whether to verify at the end of each round. Note that it will lead to an increase in timing.
     args.scaler         = [False, True][1]                           # Whether to use precision scaling
-    args.pretrain       = [False, True][1]                           # Whether to perform pre-training
+    args.pretrain       = [False, True][0]                           # Whether to perform pre-training
 
     args.usecast        = [False, True][1]                           # Whether to use mixed precision
     args.reducer        = [False, True][0]                           # Whether to use asynchronous gradient synchronization
@@ -238,6 +244,7 @@ if __name__ == '__main__':
     args.experiment_name = f'model={args.model_name}|policy={our_policy}|dataset={dataset_index}|parts={args.num_parts[args.server_id]}|cache={args.gcache_size}/{args.lcache_size}|pipeline={"T" if args.use_pipeline else "F"}|eval={"T" if args.eval else "F"}|pretrain={"T" if args.pretrain else "F"}'
     # --------------------------------------- #
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+    os.environ['TORCH_DISTRIBUTED_DEBUG'] = 'DETAIL'
     gpu.cal_gpus_capability(args.gpus_list)
     # set_random_seeds(42)
     print("-" * 50)
@@ -256,10 +263,15 @@ if __name__ == '__main__':
         # for cache_size in [10000,20000,40000,60000,80000,100000,120000,140000,160000,180000,200000,220000,240000,260000,]:
         #     args.lcache_size = cache_size  # int(0.2*args.lcache_size)
         #     args.gcache_size = cache_size  # int(0.2*args.gcache_size)
-        args.gcache_size, args.lcache_size = StorageServer.cal_capacity(args=args, f_dims=dims, part_dir='/mnt/disk/sxf/data/part_data')
+        args.gcache_size, args.lcache_size = StorageServer.cal_capacity(args=args, f_dims=dims, part_dir=args.part_dir)
         print('>> CPU cache capacity: ', args.gcache_size)
         print('>> GPU cache capacity: ', args.lcache_size)
     print("-" * 50)
+
+    try:
+        os.environ['NUM_PARTS_LIST'] = ','.join(map(str, args.num_parts))
+    except Exception:
+        os.environ['NUM_PARTS_LIST'] = str(args.num_parts)
 
     manager = Manager()
     t1 = time.time()

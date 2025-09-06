@@ -187,40 +187,54 @@ def graph_patition_store(dataset:str, partition_size:int,
     partition_dir = '{}/{}/{}server'.format(part_dir, dataset, server_num)
 
     if server_num > 1:
-        metis_partitions = dgl.metis_partition(graph, k=server_num, extra_cached_hops=0, reshuffle=True,
-                                               balance_ntypes=None, balance_edges=False, mode="k-way")
+        metis_partitions = dgl.metis_partition(graph, k=server_num, extra_cached_hops=0, reshuffle=True, balance_ntypes=None, balance_edges=True, mode="k-way")
         for part_id, part_graph in metis_partitions.items():
             part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
-            orig_id = part_graph.ndata['_ID']
-            part_graph.ndata['test_mask'] = graph.ndata['test_mask'][orig_id]
-            part_graph.ndata['val_mask'] = graph.ndata['val_mask'][orig_id]
-            part_graph.ndata['train_mask'] = graph.ndata['train_mask'][orig_id]
+            if 'orig_id' in part_graph.ndata: orig_id = part_graph.ndata['orig_id'].long()
+            elif dgl.NID in part_graph.ndata: orig_id = part_graph.ndata[dgl.NID].long()
+            else: orig_id = part_graph.ndata['_ID'].long()
+
+            part_graph.ndata['test_mask'] = graph.ndata['test_mask'][orig_id].bool()
+            part_graph.ndata['val_mask'] = graph.ndata['val_mask'][orig_id].bool()
+            part_graph.ndata['train_mask'] = graph.ndata['train_mask'][orig_id].bool()
             part_graph.ndata['label'] = graph.ndata['label'][orig_id]
             part_graph.ndata['feat'] = graph.ndata['feat'][orig_id]
 
             dgl.save_graphs(part_filename, part_graph)
+            print(">> dgl.metis_partitions done, saved to {}".format(part_filename))
         # TODO: This can be processed in parallel.
         partitions = []
+        in_degrees = graph.in_degrees()
+        out_degrees = graph.out_degrees()
         for part_id in range(server_num):
             gpu_num = server_gpus[part_id]
             part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
             subpartition_dir = os.path.join(partition_dir, f'server{part_id}', f'{gpu_num}part')
-            part_graphs = dgl.load_graphs(part_filename)[0][0]
-            # save global degrees
-            in_degrees = part_graphs.in_degrees()
-            out_degrees = part_graphs.out_degrees()
             save_dir = f'{subpartition_dir}/graph_degrees'
             if not os.path.exists(save_dir): os.makedirs(save_dir)
-            torch.save(in_degrees, f'{save_dir}/in_degrees.pt')
-            torch.save(out_degrees, f'{save_dir}/out_degrees.pt')
+            part_graph = dgl.load_graphs(part_filename)[0][0]
+            if 'orig_id' in part_graph.ndata: sid_orig = part_graph.ndata['orig_id'].long()
+            elif dgl.NID in part_graph.ndata: sid_orig = part_graph.ndata[dgl.NID].long()
+            else: sid_orig = part_graph.ndata['_ID'].long()
+            # save global degrees
+            # in_degrees = part_graphs.in_degrees()
+            # out_degrees = part_graphs.out_degrees()
+            torch.save(in_degrees[sid_orig], f'{save_dir}/in_degrees.pt')
+            torch.save(out_degrees[sid_orig], f'{save_dir}/out_degrees.pt')
             print(f'<save degrees: {save_dir}>')
-            orig_ids = dgl.distributed.partition_graph(part_graphs,
+            orig_ids = dgl.distributed.partition_graph(part_graph,
                                                        graph_name=dataset,
                                                        part_method=part_method,
                                                        num_parts=gpu_num,
                                                        out_path=subpartition_dir,
                                                        num_hops=num_hops,
                                                        return_mapping=True)
+            print(">> dgl.distributed.partition_graph done")
+
+
+
+
+
     else:
         # the dir to store graph partition
         partition_dir = f'{partition_dir}/server0/{partition_size}part'

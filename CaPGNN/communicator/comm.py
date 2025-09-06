@@ -42,19 +42,35 @@ class Communicator(object):
         dist.init_process_group(backend, init_method="env://")
         self._backend = backend
         self._init_method = init_method
-        self._local_rank = int(os.environ['LOCAL_RANK'])
+        self._local_rank = int(os.environ.get('LOCAL_RANK', '0'))
         self._device = torch.device(f'cuda:{self._local_rank}')
         # torch.cuda.set_device(self._device)
         self.queue_stream = [torch.cuda.Stream() for i in range(6)]
 
     def _create_groups(self):
-        local_size = self.get_local_world_size()
-        node_rank = self.server_id
-        start_rank = node_rank * local_size
-        local_ranks = list(range(start_rank, start_rank + local_size))
-        self.local_group = dist.new_group(ranks=local_ranks)
-        global_ranks = [i * local_size for i in range(self.server_num)]
-        self.global_group = dist.new_group(ranks=global_ranks)
+        parts_env = os.environ.get('NUM_PARTS_LIST', None)
+        self.parts = list(map(int, parts_env.split(',')))
+        assert len(self.parts) == self.server_num, "NUM_PARTS_LIST长度需等于节点数"
+
+        local_world_size = self.parts[self.server_id]
+        self.global_start_rank = sum(self.parts[:self.server_id])
+        self.global_end_rank = self.global_start_rank + local_world_size
+        self.local_ranks = list(range(local_world_size))                                    # local_ranks 应该从 0 开始连续编号
+        self.global_ranks = list(range(self.global_start_rank, self.global_end_rank))       # global_ranks 在全局中唯一，跨节点连续编号
+        self.global_leaders_rank = [sum(self.parts[:i]) for i in range(self.server_num)]    # leaders的全局rank. 第一个rank当做leader
+        self.local_group = dist.new_group(ranks=self.global_ranks)
+        self.global_group = dist.new_group(ranks=self.global_leaders_rank)
+        self.all_global_group = dist.new_group(ranks=list(range(sum(self.parts))))
+        print(f"local_ranks={self.local_ranks}, global_ranks={self.global_ranks}, global_leaders_rank={self.global_leaders_rank}")
+
+
+        # local_size = self.get_local_world_size()
+        # node_rank = self.server_id
+        # start_rank = node_rank * local_size
+        # local_ranks = list(range(start_rank, start_rank + local_size))
+        # self.local_group = dist.new_group(ranks=local_ranks)
+        # global_ranks = [i * local_size for i in range(self.server_num)]
+        # self.global_group = dist.new_group(ranks=global_ranks)
 
 
     def __repr__(self):
@@ -119,26 +135,31 @@ class Communicator(object):
     *************************************************
     '''
 
-    def hierarchical_allreduce(self, tensor):
+    def hierarchical_allreduce(self, tensor, average: bool = True):
         '''
         Example of manual hierarchical allreduce:
           1. First intra-node
           2. Then inter-node
         '''
-        local_size = self.get_local_world_size()
-        # intra-node: average across GPUs on same machine
-        dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=self.local_group)
-        tensor /= local_size
-        # inter-node: only local_rank==0 participates
-        if self.local_rank == 0:
-            dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=self.global_group)
-            tensor /= self.server_num
+        self.all_reduce_sum(tensor, group=self.all_global_group)
+
+        # world_size = dist.get_world_size()
+        # local_size = dist.get_world_size(group=self.local_group)
+        # # print(f"[{self.local_rank}] world_size={world_size}, local_size={local_size}, is_in_local_group={dist.get_rank(group=self.local_group)}, is_in_global_group={dist.get_rank(group=self.global_group)}")
+        # # 1. 节点内聚合（本机所有进程都要调用）
+        # if local_size > 1: dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=self.local_group)
+        # # 2. 节点间聚合（只有 leader 参与，因为只有 leader 在 global_group 里）
+        # if self.local_rank == 0: dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=self.global_group)
+        # # 3. 节点内广播（本机所有进程都要调用；src 必须是本机 leader 的“全局 rank”）
+        # if local_size > 1: dist.broadcast(tensor, src=self.global_start_rank, group=self.local_group)
+        # if average: tensor.div_(world_size)
+
+
 
     def hierarchical_barrier(self):
+        torch.cuda.synchronize()
         self.barrier(group=self.local_group)
-        if self.local_rank == 0:
-            self.barrier(group=self.global_group)
-        self.barrier(group=self.local_group)
+        # self.barrier(group=self.global_group)
 
 
     @staticmethod

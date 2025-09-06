@@ -111,7 +111,7 @@ class Trainer(object):
         # setup
         self.engine = engine(runtime_args,
                              runtime_config['num_epoches'],
-                             data_config['partition_path'],
+                             runtime_args['part_dir'],
                              runtime_config['dataset'],
                              msg_precision_type,
                              model_type,
@@ -164,12 +164,11 @@ class Trainer(object):
         # fetch needed config
         runtime_config = self.config['runtime']
         is_multilabel = self.config['data']['is_multilabel']
-        # Synchronize random seeds of all workers
-        # comm.barrier(group=comm.ctx.local_group)
-        # print(f"[{rank}] barrier done")
         sync_seed()
         print(f"[{rank}] sync_seed done")
         self.model.reset_parameters()
+        comm.ctx.hierarchical_barrier()
+        print(f"[{rank}] barrier done")
         sync_model(self.model)
         print(f"[{rank}] sync_model done")
         # torch.cuda.synchronize()
@@ -180,7 +179,7 @@ class Trainer(object):
             self.engine.ctx.reducer.init(self.model)
             # Register a hook function for each parameter and is called when backpropagated. Allows operation on the gradient after it is calculated and before it is optimized by the optimizer.
             for i, (name, param) in enumerate(self.model.named_parameters()):
-                param.register_hook(self.reduce_hook(param, name, runtime_config["num_parts"]))
+                param.register_hook(self.reduce_hook(param, name, comm.get_world_size()))
 
         # Get the parameters required for training
         epoches = runtime_config['num_epoches']
@@ -190,12 +189,10 @@ class Trainer(object):
         val_mask = self.engine.ctx.val_mask
         test_mask = self.engine.ctx.test_mask
         # Get the total number of nodes
-        total_number_nodes = torch.LongTensor([train_mask.numel()])
-        # comm.barrier(group=comm.ctx.local_group)
-        comm.all_reduce_sum(total_number_nodes, group=comm.ctx.local_group)
-        print(f"[{rank}] all_reduce_sum done")
-        # Get the result after reducing
+        total_number_nodes = torch.tensor([train_mask.numel()], device=comm.ctx.device, dtype=torch.int64)
+        comm.all_reduce_sum(total_number_nodes, group=comm.ctx.global_group)
         total_number_nodes = total_number_nodes.item()
+        if comm.get_rank() == 0: print(f"[Init] global_train_samples = {total_number_nodes}, train_mask={train_mask.shape}")
         # Setting up the optimizer
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=runtime_config['learning_rate'], weight_decay=runtime_config['weight_decay'], amsgrad=True)
         scheduler = None if not runtime_config["scheduler"] else torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.95, patience=5, min_lr=1e-6, verbose=True)
@@ -234,8 +231,6 @@ class Trainer(object):
         STALENESS_THRESHOLD = -1
         staleness_counter = 0
         for epoch in range(1, epoches + 1):
-            # with torch.profiler.record_function('train_epoch'):
-            # note: replace, instead of delete
             # if engine.ctx.our_cache: engine.ctx.storage_server.clear_cache(rank)
             engine.ctx.timer.is_train = True
             with engine.ctx.timer.record('epoch'):

@@ -42,16 +42,17 @@ def sync_seed():
     '''
     Synchronize random seeds of all workers
     '''
-    if comm.get_rank() == 0:
-        seed = int(time.time() % (2 ** 32 - 1))
-        obj_list = [seed]
-        comm.broadcast_any(obj_list, src = 0)
-        fix_seed(seed)
-    else:
-        obj_list = [None]
-        comm.broadcast_any(obj_list, src = 0)
-        seed = obj_list[0]
-        fix_seed(seed)
+    fix_seed(42)
+    # if comm.get_rank() == 0:
+    #     seed = int(time.time() % (2 ** 32 - 1))
+    #     obj_list = [seed]
+    #     comm.broadcast_any(obj_list, src = 0)
+    #     fix_seed(seed)
+    # else:
+    #     obj_list = [None]
+    #     comm.broadcast_any(obj_list, src = 0)
+    #     seed = obj_list[0]
+    #     fix_seed(seed)
 
 def sync_model(model: nn.Module):
     '''
@@ -74,9 +75,15 @@ def average_gradients(model: nn.Module):
     '''
     for name, param in model.named_parameters():
         if param.requires_grad:
-            # print(f"[{comm.get_rank()}] all_reduce {name} grad {param.grad.shape}")
             # comm.all_reduce_sum(param.grad.data)
-            comm.ctx.hierarchical_allreduce(param.grad.data)
+            # param.grad.data.div_(comm.ctx.get_world_size())
+            comm.ctx.hierarchical_allreduce(param.grad.data, average=True)
+
+    # N = float(engine.ctx.global_train_samples)
+    # for _, param in model.named_parameters():
+    #     if param.requires_grad and param.grad is not None:
+    #         comm.ctx.hierarchical_allreduce(param.grad.data, average=False)
+    #         param.grad.data.div_(N)
 
 
 def train_for_one_epoch(our,
