@@ -92,7 +92,8 @@ def get_friendster(raw_dir, format=None):
 def graph_patition_store(dataset:str, partition_size:int,
                          raw_dir:str = 'dataset', part_dir:str = 'part_data',
                          num_hops=1, part_method='metis',
-                         server_num=1, server_gpus=None):
+                         server_num=1, server_gpus=None,
+                         force_gen=False):
     '''
     Partition and store the dataset
     we set HALO hop as 1 to save cross-device neighboring nodes' indices for constructing send/recv idx.
@@ -187,21 +188,22 @@ def graph_patition_store(dataset:str, partition_size:int,
     partition_dir = '{}/{}/{}server'.format(part_dir, dataset, server_num)
 
     if server_num > 1:
-        metis_partitions = dgl.metis_partition(graph, k=server_num, extra_cached_hops=0, reshuffle=True, balance_ntypes=None, balance_edges=True, mode="k-way")
-        for part_id, part_graph in metis_partitions.items():
-            part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
-            if 'orig_id' in part_graph.ndata: orig_id = part_graph.ndata['orig_id'].long()
-            elif dgl.NID in part_graph.ndata: orig_id = part_graph.ndata[dgl.NID].long()
-            else: orig_id = part_graph.ndata['_ID'].long()
+        if force_gen or not all([os.path.exists(os.path.join(partition_dir, f'server{part_id}.dgl')) for part_id in range(server_num)]):
+            metis_partitions = dgl.metis_partition(graph, k=server_num, extra_cached_hops=0, reshuffle=True, balance_ntypes=None, balance_edges=True, mode="k-way")
+            for part_id, part_graph in metis_partitions.items():
+                part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
+                if 'orig_id' in part_graph.ndata: orig_id = part_graph.ndata['orig_id'].long()
+                elif dgl.NID in part_graph.ndata: orig_id = part_graph.ndata[dgl.NID].long()
+                else: orig_id = part_graph.ndata['_ID'].long()
+                part_graph.ndata['test_mask'] = graph.ndata['test_mask'][orig_id].bool()
+                part_graph.ndata['val_mask'] = graph.ndata['val_mask'][orig_id].bool()
+                part_graph.ndata['train_mask'] = graph.ndata['train_mask'][orig_id].bool()
+                part_graph.ndata['label'] = graph.ndata['label'][orig_id]
+                part_graph.ndata['feat'] = graph.ndata['feat'][orig_id]
 
-            part_graph.ndata['test_mask'] = graph.ndata['test_mask'][orig_id].bool()
-            part_graph.ndata['val_mask'] = graph.ndata['val_mask'][orig_id].bool()
-            part_graph.ndata['train_mask'] = graph.ndata['train_mask'][orig_id].bool()
-            part_graph.ndata['label'] = graph.ndata['label'][orig_id]
-            part_graph.ndata['feat'] = graph.ndata['feat'][orig_id]
+                dgl.save_graphs(part_filename, part_graph)
+                print(">> dgl.metis_partitions done, saved to {}".format(part_filename))
 
-            dgl.save_graphs(part_filename, part_graph)
-            print(">> dgl.metis_partitions done, saved to {}".format(part_filename))
         # TODO: This can be processed in parallel.
         partitions = []
         in_degrees = graph.in_degrees()
@@ -211,7 +213,12 @@ def graph_patition_store(dataset:str, partition_size:int,
             part_filename = os.path.join(partition_dir, f'server{part_id}.dgl')
             subpartition_dir = os.path.join(partition_dir, f'server{part_id}', f'{gpu_num}part')
             save_dir = f'{subpartition_dir}/graph_degrees'
+            in_degrees = f'{save_dir}/in_degrees.pt'
+            out_degrees = f'{save_dir}/out_degrees.pt'
             if not os.path.exists(save_dir): os.makedirs(save_dir)
+            if (not force_gen) and os.path.exists(part_filename) and os.path.exists(in_degrees) and os.path.exists(out_degrees):
+                print(f"{part_filename} already exists or force_gen={force_gen}!")
+                continue
             part_graph = dgl.load_graphs(part_filename)[0][0]
             if 'orig_id' in part_graph.ndata: sid_orig = part_graph.ndata['orig_id'].long()
             elif dgl.NID in part_graph.ndata: sid_orig = part_graph.ndata[dgl.NID].long()
@@ -219,8 +226,8 @@ def graph_patition_store(dataset:str, partition_size:int,
             # save global degrees
             # in_degrees = part_graphs.in_degrees()
             # out_degrees = part_graphs.out_degrees()
-            torch.save(in_degrees[sid_orig], f'{save_dir}/in_degrees.pt')
-            torch.save(out_degrees[sid_orig], f'{save_dir}/out_degrees.pt')
+            torch.save(in_degrees[sid_orig], in_degrees)
+            torch.save(out_degrees[sid_orig], out_degrees)
             print(f'<save degrees: {save_dir}>')
             orig_ids = dgl.distributed.partition_graph(part_graph,
                                                        graph_name=dataset,

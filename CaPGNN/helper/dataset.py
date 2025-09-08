@@ -37,6 +37,12 @@ def download_url(url: str, folder: str, log: bool = True,
     if not os.path.exists(folder):
         os.makedirs(folder)
     context = ssl._create_unverified_context()
+    # proxy_handler = urllib.request.ProxyHandler({
+    #     'http': 'http://202.38.247.229:7890',
+    #     'https': 'http://202.38.247.229:7890'
+    # })
+    # opener = urllib.request.build_opener(proxy_handler, urllib.request.HTTPSHandler(context=context))
+    # data = opener.open(url)
     data = urllib.request.urlopen(url, context=context)
     with open(path, 'wb') as f:
         # workaround for https://bugs.python.org/issue42853

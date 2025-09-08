@@ -69,8 +69,9 @@ def main(local_rank, args, storage_server):
     os.environ['NCCL_P2P_DISABLE'] = '1'
     # os.environ['NCCL_ALGO'] = 'Tree'
     os.environ['NCCL_CHECKS_DISABLE'] = '1'
-    os.environ['NCCL_CHECK_POINTERS'] = '1'
-    os.environ['NCCL_DEBUG'] = '1'
+    # os.environ['NCCL_CHECK_POINTERS'] = '1'
+    # os.environ['TORCH_DISTRIBUTED_DEBUG'] = 'DETAIL'
+    # os.environ['NCCL_DEBUG'] = 'TRACE'
 
     device = torch.device('cuda', local_rank)
     torch.cuda.set_device(device)
@@ -96,7 +97,6 @@ def main(local_rank, args, storage_server):
         # storage_server.add_halo_features_to_local('forward0', halo_node_feats)
     print(f'[{local_rank}] Preparing...')
     torch.cuda.synchronize()
-    # dist.barrier()
     torch.cuda.empty_cache()
     # Start training according to the configuration
     print(f'[{local_rank}] Start train...')
@@ -168,7 +168,7 @@ if __name__ == '__main__':
             ['2', ],
             ['2,3', ],
             ['2,7,3', ],
-            ['4,2,7,3', ]
+            ['4,2,3,7', ]
         ]
     }
     dataset_groups      = [
@@ -213,7 +213,7 @@ if __name__ == '__main__':
     args.use_pipeline   = [False, True][1]                           # Whether to use a pipeline
     args.eval           = [False, True][1]                           # Whether to verify at the end of each round. Note that it will lead to an increase in timing.
     args.scaler         = [False, True][1]                           # Whether to use precision scaling
-    args.pretrain       = [False, True][0]                           # Whether to perform pre-training
+    args.pretrain       = [False, True][1]                           # Whether to perform pre-training
 
     args.usecast        = [False, True][1]                           # Whether to use mixed precision
     args.reducer        = [False, True][0]                           # Whether to use asynchronous gradient synchronization
@@ -226,7 +226,7 @@ if __name__ == '__main__':
     # ------------Parameter Auto Configuration Zone---------------- #
     args.num_parts      = [int(x) for x in args.num_parts.split(',')]
     # args.port           = f'29{dataset_index%10}{args.num_parts[args.server_id]}{policy}'
-    args.port           = f'29500'
+    args.port           = f'29600'
     args.swanlab        = args.swanlab and args.eval
     args.our_cache      = policy_map[our_policy]['our_cache']
     args.our_partition  = policy_map[our_policy]['our_partition']
@@ -244,7 +244,6 @@ if __name__ == '__main__':
     args.experiment_name = f'model={args.model_name}|policy={our_policy}|dataset={dataset_index}|parts={args.num_parts[args.server_id]}|cache={args.gcache_size}/{args.lcache_size}|pipeline={"T" if args.use_pipeline else "F"}|eval={"T" if args.eval else "F"}|pretrain={"T" if args.pretrain else "F"}'
     # --------------------------------------- #
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
-    os.environ['TORCH_DISTRIBUTED_DEBUG'] = 'DETAIL'
     gpu.cal_gpus_capability(args.gpus_list)
     # set_random_seeds(42)
     print("-" * 50)

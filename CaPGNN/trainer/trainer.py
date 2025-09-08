@@ -54,14 +54,10 @@ class Trainer(object):
         model_name = runtime_config['model_name']
         log_level = runtime_config['logger_level']
 
-        if runtime_args['our_cache'] and runtime_args['our_partition']:
-            mark = 'our_cache_partition'
-        elif runtime_args['our_cache']:
-            mark = 'our_cache'
-        elif runtime_args['our_partition']:
-            mark = 'our_partition'
-        else:
-            mark = 'adaqp'
+        if runtime_args['our_cache'] and runtime_args['our_partition']: mark = 'our_cache_partition'
+        elif runtime_args['our_cache']: mark = 'our_cache'
+        elif runtime_args['our_partition']: mark = 'our_partition'
+        else: mark = 'adaqp'
         if runtime_args['use_pipeline']: mark += '_pipe'
         self._n_layers = runtime_config["n_layers"]
         self.cache_size = runtime_config['gcache_size']
@@ -165,15 +161,9 @@ class Trainer(object):
         runtime_config = self.config['runtime']
         is_multilabel = self.config['data']['is_multilabel']
         sync_seed()
-        print(f"[{rank}] sync_seed done")
         self.model.reset_parameters()
         comm.ctx.hierarchical_barrier()
-        print(f"[{rank}] barrier done")
         sync_model(self.model)
-        print(f"[{rank}] sync_model done")
-        # torch.cuda.synchronize()
-        # comm.barrier()
-        # print(f"[{rank}] barrier done")
 
         if runtime_config["reducer"]:
             self.engine.ctx.reducer.init(self.model)
@@ -190,7 +180,7 @@ class Trainer(object):
         test_mask = self.engine.ctx.test_mask
         # Get the total number of nodes
         total_number_nodes = torch.tensor([train_mask.numel()], device=comm.ctx.device, dtype=torch.int64)
-        comm.all_reduce_sum(total_number_nodes, group=comm.ctx.global_group)
+        comm.all_reduce_sum(total_number_nodes) # , group=comm.ctx.global_group
         total_number_nodes = total_number_nodes.item()
         if comm.get_rank() == 0: print(f"[Init] global_train_samples = {total_number_nodes}, train_mask={train_mask.shape}")
         # Setting up the optimizer

@@ -143,16 +143,16 @@ class CSPart(object):
         else:
             for rank in range(self.partition_size): self.log(self.graph_info[rank])
 
-    def coarse_graph_patition(self, fast_skip=False, part_method='random', do_partition=False, num_hops=1,
-                              server_gpus=None):
+    def coarse_graph_patition(self, part_method='random', do_partition=False, num_hops=1, server_gpus=None, force_gen=False):
         partition_dir = '{}/{}/{}part'.format(self.partition_dir, self.dataset_name, self.partition_size)
         subpartition_dir = '{}/{}/{}server'.format(self.partition_dir, self.dataset_name, self.server_num)
-        if fast_skip and server_gpus == 1 and os.path.exists(partition_dir): return
-        if fast_skip and isinstance(server_gpus, list) and os.path.exists(subpartition_dir): return
+        if not force_gen and server_gpus == 1 and os.path.exists(partition_dir): return
+        # if not force_gen and isinstance(server_gpus, list) and os.path.exists(subpartition_dir): return
         graph_patition_store(self.dataset_name, self.partition_size,
                              self.dataset_dir, self.partition_dir,
                              num_hops=num_hops, part_method=part_method,
-                             server_num=self.server_num, server_gpus=server_gpus)
+                             server_num=self.server_num, server_gpus=server_gpus,
+                             force_gen=force_gen)
         self.log(f"<{self.dataset_name} graph partition done.>")
 
     def coarse_load_patition(self):
@@ -166,11 +166,10 @@ class CSPart(object):
             #      - Cross-partition communication: In distributed training, compute nodes of different partitions need to exchange information of nodes and edges. RangePartitionBook helps manage these cross-partition communications.
             #   RangePartitionBook provides some methods and properties to query partition information, such as:
             #      - partid2nids(part_id): Returns the node ID range of the specified partition ID.
-            #      - partid2eids(part_id)Returns the edge ID range of the specified partition ID.
-            #      - nid2partid(nid)Returns the partition ID where the specified node ID is located.
-            #      - eid2partid(eid)Returns the partition ID where the specified edge ID is located.
-            g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config,
-                                                                                                       rank)
+            #      - partid2eids(part_id): Returns the edge ID range of the specified partition ID.
+            #      - nid2partid(nid): Returns the partition ID where the specified node ID is located.
+            #      - eid2partid(eid): Returns the partition ID where the specified edge ID is located.
+            g, nodes_feats, efeats, gpb, graph_name, node_type, etype = dgl.distributed.load_partition(part_config, rank)
             if len(nodes_feats.keys()) == 0 or '_N/x' in nodes_feats:
                 # x = nodes_feats['_N/x']
                 nodes_feats = {k: v for k, v in g.ndata.items()}
@@ -931,6 +930,61 @@ def auto_select_dtype(feat_tensor):
             return torch.float32
 
 
+# 代理设置
+def setup_proxy():
+    """设置代理配置"""
+    # 方法1: 从环境变量读取代理设置
+    # http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+    # https_proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
+
+    # 方法2: 直接设置代理（取消注释并修改为您的代理地址）
+    http_proxy = "http://202.38.247.229:7890"
+    https_proxy = "http://202.38.247.229:7890"
+
+    if http_proxy or https_proxy:
+        print(f"Using proxy - HTTP: {http_proxy}, HTTPS: {https_proxy}")
+
+        # 设置requests代理
+        if http_proxy:
+            os.environ['http_proxy'] = http_proxy
+            os.environ['HTTP_PROXY'] = http_proxy
+        if https_proxy:
+            os.environ['https_proxy'] = https_proxy
+            os.environ['HTTPS_PROXY'] = https_proxy
+
+        # 设置transformers代理
+        os.environ['HF_HUB_PROXY'] = https_proxy or http_proxy
+
+        # 禁用SSL验证（解决SSL错误）
+        os.environ['CURL_CA_BUNDLE'] = ""
+        os.environ['REQUESTS_CA_BUNDLE'] = ""
+        os.environ['SSL_CERT_FILE'] = ""
+
+        # 设置requests的SSL验证
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        # 添加这些SSL配置
+        import ssl
+        ssl._create_default_https_context = ssl._create_unverified_context
+
+        # 配置urllib3
+        urllib3.util.ssl_.DEFAULT_CERTS = None
+
+        # 设置requests的verify参数
+        import requests
+        requests.packages.urllib3.disable_warnings()
+
+        # 设置huggingface_hub的SSL验证
+        os.environ['HF_HUB_DISABLE_SSL_VERIFICATION'] = '1'
+        os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
+
+        return True
+    else:
+        print("No proxy configured. If you have network issues, please set proxy environment variables.")
+        return False
+
+
 def partition1():
     parser = argparse.ArgumentParser(description='graph partition scripts')
     parser.add_argument('--dataset_dir', type=str, default='/mnt/disk/datasets/graph')
@@ -1024,7 +1078,7 @@ def partition1():
         app = CSPart(vargs)
         # 1. Pre-partitioning using off-the-shelf partitioning algorithm;
         t1 = time.time()
-        app.coarse_graph_patition(fast_skip=False, part_method=part_method, num_hops=1, server_gpus=vargs["partition_num"])
+        app.coarse_graph_patition(part_method=part_method, num_hops=1, server_gpus=vargs["partition_num"], force_gen=False)
         print('>> coarse graph patition: ', time.time() - t1)
         # 2. Construct a local weighted graph, that is, calculate the weighted value only for the edge nodes;
         # Loading partition subgraphs and features
@@ -1051,19 +1105,15 @@ def partition1():
         print('>> do partition: ', time.time() - t2)
 
         new_graph_info = []
-        for index in range(len(app.sorted_gpu_ids)):
-            new_graph_info.append(new_assig_graphs_gpus[app.sorted_gpu_ids[index]])
+        for index in range(len(app.sorted_gpu_ids)): new_graph_info.append(new_assig_graphs_gpus[app.sorted_gpu_ids[index]])
         app.get_send_recv_idx_scores(new_graph_info, skip_load=True)
         app.reorder_graph(new_graph_info)
-        for index in range(len(app.sorted_gpu_ids)): assig_graphs_gpus[app.sorted_gpu_ids[index]] = new_graph_info[
-            index]
+        for index in range(len(app.sorted_gpu_ids)): assig_graphs_gpus[app.sorted_gpu_ids[index]] = new_graph_info[index]
         print('>> fine patition: ', time.time() - t1)
 
         # Save partition results
-        partition_file = os.path.join(app.partition_dir,
-                                      f'{app.dataset_name}/{app.server_num}server/server{app.server_id}/{app.partition_size}part/{app.dataset_name}_processed_partitions_{vargs["our_partition"]}_{sorted(gpus_list)}.pkl')
-        with open(partition_file, 'wb') as f:
-            pickle.dump(assig_graphs_gpus, f)
+        partition_file = os.path.join(app.partition_dir, f'{app.dataset_name}/{app.server_num}server/server{app.server_id}/{app.partition_size}part/{app.dataset_name}_processed_partitions_{vargs["our_partition"]}_{sorted(gpus_list)}.pkl')
+        with open(partition_file, 'wb') as f: pickle.dump(assig_graphs_gpus, f)
         print(f"Processed partitions saved to {partition_file}")
 
         # Loading pkl file
@@ -1071,14 +1121,12 @@ def partition1():
             print("Test loading pkl file")
             with open(partition_file, 'rb') as f: _ = pickle.load(f)
         print("=" * 100)
-        print(
-            f"When training, be sure to set CUDA_VISIBLE_DEVICES in the following GPU order: {','.join(map(str, app.sorted_gpu_ids))}")
+        print(f"When training, be sure to set CUDA_VISIBLE_DEVICES in the following GPU order: {','.join(map(str, app.sorted_gpu_ids))}")
 
         halo_node_features, _ = app.overlapping_our(part_size=vargs['partition_size'], dataset=vargs['dataset_name'],
                                                     gpus_list=gpus_list, k=-1, part_dir=vargs['partition_dir'],
                                                     our_partition=vargs['our_partition'])
-        print(
-            f"The final number of valid nodes: [{vargs['dataset_name']}][{vargs['our_partition']}][{vargs['partition_size']}][{vargs['gpus_index']}] => {len(halo_node_features.keys())}")
+        print(f"The final number of valid nodes: [{vargs['dataset_name']}][{vargs['our_partition']}][{vargs['partition_size']}][{vargs['gpus_index']}] => {len(halo_node_features.keys())}")
         del app
         torch.cuda.empty_cache()
         print('#' * 50)

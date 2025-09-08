@@ -30,7 +30,7 @@ class Communicator(object):
         self._create_groups()
 
 
-    def _init(self, backend: str, init_method: str):
+    def _init(self, backend: str, init_method: str="env://"):
         '''
         initialize the communicator.
         '''
@@ -39,30 +39,43 @@ class Communicator(object):
         # When using NCCL, you must use a GPU device
         if backend == 'nccl' and not torch.cuda.is_available(): raise RuntimeError('NCCL backend requires CUDA.')
 
-        dist.init_process_group(backend, init_method="env://")
+        dist.init_process_group(backend, init_method=init_method)
+        assert dist.is_initialized()
         self._backend = backend
         self._init_method = init_method
-        self._local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        self._local_rank = int(os.environ.get('LOCAL_RANK', None))
         self._device = torch.device(f'cuda:{self._local_rank}')
         # torch.cuda.set_device(self._device)
         self.queue_stream = [torch.cuda.Stream() for i in range(6)]
 
     def _create_groups(self):
         parts_env = os.environ.get('NUM_PARTS_LIST', None)
+        if not parts_env: raise RuntimeError('NUM_PARTS_LIST not set. Example: "2,4,4" for 3 nodes.')
         self.parts = list(map(int, parts_env.split(',')))
-        assert len(self.parts) == self.server_num, "NUM_PARTS_LIST长度需等于节点数"
+        if len(self.parts) != self.server_num: raise AssertionError('NUM_PARTS_LIST长度需等于节点数 (server_num)。')
 
         local_world_size = self.parts[self.server_id]
         self.global_start_rank = sum(self.parts[:self.server_id])
         self.global_end_rank = self.global_start_rank + local_world_size
         self.local_ranks = list(range(local_world_size))                                    # local_ranks 应该从 0 开始连续编号
         self.global_ranks = list(range(self.global_start_rank, self.global_end_rank))       # global_ranks 在全局中唯一，跨节点连续编号
+        self.all_global_ranks = list(range(sum(self.parts)))
         self.global_leaders_rank = [sum(self.parts[:i]) for i in range(self.server_num)]    # leaders的全局rank. 第一个rank当做leader
-        self.local_group = dist.new_group(ranks=self.global_ranks)
-        self.global_group = dist.new_group(ranks=self.global_leaders_rank)
-        self.all_global_group = dist.new_group(ranks=list(range(sum(self.parts))))
-        print(f"local_ranks={self.local_ranks}, global_ranks={self.global_ranks}, global_leaders_rank={self.global_leaders_rank}")
-
+        # patch
+        self.all_node_groups = []
+        start = 0
+        for i in range(self.server_num):
+            end = start + self.parts[i]
+            self.all_node_groups.append(dist.new_group(ranks=list(range(start, end))))
+            start = end
+        self.local_group = self.all_node_groups[self.server_id]
+        # self.local_group = dist.new_group(ranks=self.global_ranks)
+        # print(f">> [{self._local_rank}/{dist.get_rank()}] local_ranks={self.local_ranks}, local_group={self.local_group}")
+        # self.global_group = dist.new_group(ranks=self.global_leaders_rank)
+        dist.barrier()
+        self.all_global_group = dist.new_group(ranks=self.all_global_ranks)
+        # print(f">> [{self._local_rank}/{dist.get_rank()}] all_global_ranks={self.all_global_ranks}, all_global_group={self.all_global_group}")
+        # print(f">> [{self._local_rank}/{dist.get_rank()}] global_ranks={self.global_ranks}, global_group={self.global_group}")
 
         # local_size = self.get_local_world_size()
         # node_rank = self.server_id
@@ -159,7 +172,7 @@ class Communicator(object):
     def hierarchical_barrier(self):
         torch.cuda.synchronize()
         self.barrier(group=self.local_group)
-        # self.barrier(group=self.global_group)
+        # self.barrier(group=self.all_global_group)
 
 
     @staticmethod
