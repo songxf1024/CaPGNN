@@ -24,3 +24,19 @@ python main.py --dataset_index=6 --num_parts="2,2" --server_num=2 --server_id=1 
 Copyright (c) 2025 xianfeng song. All rights reserved.
 
 Licensed under the MIT License.
+
+---
+
+If you use this repository in your work, please cite our paper:
+```bash
+@article{SONG2026132978,
+  title = {CaPGNN: Optimizing parallel graph neural network training with joint caching and resource-aware graph partitioning},
+  journal = {Neurocomputing},
+  pages = {132978},
+  year = {2026},
+  issn = {0925-2312},
+  doi = {https://doi.org/10.1016/j.neucom.2026.132978},
+  url = {https://www.sciencedirect.com/science/article/pii/S0925231226003759},
+  author = {Xianfeng Song and Yi Zou and Zheng Shi},
+}
+```
