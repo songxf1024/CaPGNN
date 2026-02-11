@@ -144,6 +144,7 @@ If you use this repository in your work, please cite our paper:
 @article{SONG2026132978,
   title = {CaPGNN: Optimizing parallel graph neural network training with joint caching and resource-aware graph partitioning},
   journal = {Neurocomputing},
+  volume = {675},
   pages = {132978},
   year = {2026},
   issn = {0925-2312},
